@@ -1,0 +1,14 @@
+FROM ghcr.io/r-wasm/webr:main
+
+# Copy the package source to /work
+COPY . /work
+
+# Set working directory
+WORKDIR /work
+
+# Install the package using pak
+RUN Rscript -e 'pak::pak(".", ask = FALSE)'
+# install tinytest for testing
+#RUN Rscript -e 'install.packages("tinytest")'
+# Default command to show package info
+CMD ["Rscript", "-e", "library(RBCFTools); sessionInfo()"]

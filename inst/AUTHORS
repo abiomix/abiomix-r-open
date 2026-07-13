@@ -1,0 +1,13 @@
+Sounkou Mahamane Toure <sounkoutoure@gmail.com> (aut, cre)
+
+Vendored components / Copyright holders
+
+- bcftools/htslib Authors
+
+see  bcftools-1.23/AUTHORS
+
+- BCFToolsScore plugin Author Giulio Genovese
+  MIT Licence
+
+- duckdb C API and C Extension API headers Authors 
+   MIT Licence
