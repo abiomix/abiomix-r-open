@@ -1,0 +1,714 @@
+
+<!-- README.md is generated from README.Rmd. Please edit README.Rmd. -->
+
+# Rducks
+
+[![R-CMD-check](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml)
+[![R-universe](https://sounkou-bioinfo.r-universe.dev/badges/Rducks)](https://sounkou-bioinfo.r-universe.dev/Rducks)
+[![Lifecycle:
+experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+
+Rducks registers R functions as DuckDB SQL functions using a
+package-managed [DuckDB C
+extension](https://duckdb.org/docs/stable/extensions/overview). The
+extension records the DuckDB database instance at load time and keeps
+extension-owned connections for native registration callbacks. It is
+built around explicit type descriptors, direct DuckDB-vector
+marshalling, and a strict rule that R object work runs on the recorded R
+thread.
+
+Rducks is organized around DuckDB function kind, scalar-UDF evaluation
+mode, and execution plan. Scalar UDFs are registered with
+`rducks_register_scalar_udf()` and choose `mode = "scalar"` for one R
+call per row or `mode = "vectorized"` for one R call per DuckDB chunk.
+Two execution transports are available: in-process
+(`transport = "inproc"`) and worker-process (`transport = "ipc"`, native
+[NNG](https://nng.nanomsg.org/) request/reply, default local workers
+launched by [mirai](https://mirai.r-lib.org/), optional
+[mori](https://shikokuchuo.net/mori/) sharing for selected globals).
+Aggregates use `rducks_register_aggregate()`.
+
+## How it works
+
+Rducks loads a small DuckDB extension that records the database instance
+and keeps extension-owned connections for registration callbacks. R
+closures are preserved while DuckDB catalog metadata can call them, and
+scalar calls run on the recorded R thread or, under `transport = "ipc"`,
+in worker R processes.
+
+In-process marshalling is direct: DuckDB produces vectors in standard
+chunks; Rducks materializes typed R inputs directly from those vectors
+in extension C, calls the R function, and writes typed results back into
+DuckDB output vectors. When a callback arrives off the recorded R thread
+under the in-process concurrent backend, the input chunk and the result
+are carried as owned DuckDB data chunks across the queue boundary.
+Dynamic omitted-`args` UDFs still bind concrete DuckDB types at the SQL
+call site before this marshalling begins.
+
+The worker-process transport uses a [Quack-style
+format](https://github.com/duckdb/duckdb-quack): DuckDB
+`BinarySerializer` messages carrying logical types and `DataChunk`
+payloads, aligned with DuckDB’s native chunk model. The codec lives in
+`src/quack_core.c` with R glue in `src/quack_codec.c`. The worker path
+currently marshals fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`,
+`INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, `UNION`, and
+`LIST`/`ARRAY`/`STRUCT` of supported types; `VARIANT` is rejected at
+registration on the `ipc` plan until the native bridge covers it.
+
+## Quick start
+
+``` r
+library(DBI)
+library(duckdb)
+library(Rducks)
+
+con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+rducks_enable(con, threads = "single")
+
+score_udf <- rducks_register_scalar_udf(
+  con,
+  name = "r_score",
+  fun = function(row) {
+    bonus <- if (identical(row$label, "high")) 100 else 0
+    list(
+      score = as.double(row$x + bonus),
+      parts = as.double(c(row$x, bonus))
+    )
+  },
+  returns = STRUCT(score = DOUBLE, parts = DOUBLE[]),
+  side_effects = TRUE
+)
+
+dbGetQuery(con, "
+  WITH input AS (
+    SELECT struct_pack(x := x::DOUBLE, label := label) AS payload
+    FROM (VALUES (2, 'low'), (21, 'high')) AS t(x, label)
+  ), scored AS (
+    SELECT r_score(payload) AS result FROM input
+  )
+  SELECT result.score AS score, result.parts AS parts
+  FROM scored
+")
+#>   score   parts
+#> 1     2    2, 0
+#> 2   121 21, 100
+```
+
+`r_score()` omits `args`, so DuckDB registers it as a dynamic varargs
+scalar UDF. At this SQL call site DuckDB binds a concrete
+`STRUCT(x DOUBLE, label VARCHAR)` input, and the return type is
+explicit: a struct containing a `DOUBLE` and a `DOUBLE[]`. Rducks
+materializes dynamic inputs as if the signature had been declared with
+`args = ...`. Use `args = NULL` only for a true zero-argument UDF.
+
+The returned registration object records the normalized signature and
+options; DuckDB owns the catalog function after registration. Dropping
+the R object does not unregister the SQL function. Registering the same
+SQL name/signature again replaces the callable implementation. Use
+`side_effects = TRUE` for functions with counters, randomness, I/O,
+mutation, sleeps, or other effects so DuckDB does not optimize them as
+pure expressions.
+
+## Lifecycle
+
+`rducks_release(con)` detaches connection-local Rducks state. For
+file-backed databases, it also closes Rducks’ extension-owned DuckDB
+connections so the file can be fully closed on strict file-locking
+platforms. It does not drop DuckDB catalog functions or release closures
+still owned by native catalog metadata. For deterministic cleanup, call
+it before `DBI::dbDisconnect(con)`; to replace a scalar UDF, register
+the same SQL name/signature again.
+
+## Type descriptors
+
+Rducks descriptors are used for scalar-UDF returns, declared scalar-UDF
+inputs, and aggregate inputs/returns. They include DuckDB scalar types,
+exact value classes such as `UUID`, `HUGEINT`, `DECIMAL(width, scale)`,
+`INTERVAL`, `BIT`, `GEOMETRY`, `VARIANT`, `ENUM(levels)`, and composite
+descriptors such as `LIST(TYPE)`, `ARRAY(TYPE, n)`, `STRUCT(...)`,
+`MAP(key, value)`, and `UNION(...)`. `GEOMETRY` values cross as their
+opaque physical `raw` bytes (WKB for a real geometry); `VARIANT` values
+cross as DuckDB’s typed storage struct wrapped by `rducks_variant`.
+VARIANT scalar-UDF signatures require a DuckDB runtime whose C API
+exposes VARIANT logical types and are not supported by direct
+marshalling yet. Direct UNION support follows DuckDB’s native UNION
+vector tag/child layout; it is tested for supported DuckDB builds but is
+intentionally treated as a version-coupled native adapter rather than a
+stable interchange format.
+
+``` r
+nested_type <- STRUCT(
+  id = INTEGER,
+  label = ENUM(c("low", "high")),
+  payload = UNION(code = INTEGER, note = VARCHAR),
+  values = LIST(DECIMAL(10, 2))
+)
+
+rducks_is_type(nested_type)
+#> [1] TRUE
+cat(strwrap(rducks_type_sql(nested_type), width = 70), sep = "\n")
+#> STRUCT(id INTEGER, label ENUM('low', 'high'), payload UNION(code
+#> INTEGER, note VARCHAR), values DECIMAL(10, 2)[])
+rducks_type_child_names(nested_type)
+#> [1] "id"      "label"   "payload" "values"
+```
+
+## Scalar UDFs
+
+Scalar mode calls the R function once per logical row. Vectorized mode
+calls the R function once per DuckDB chunk with one R vector or
+list-column per declared or dynamically bound argument.
+
+``` r
+scalar_plus_one_udf <- rducks_register_scalar_udf(
+  con,
+  name = "r_scalar_plus_one",
+  fun = function(x) x + 1,
+  args = DOUBLE,
+  returns = DOUBLE,
+  mode = "scalar",
+  side_effects = TRUE
+)
+
+vec_plus_one_udf <- rducks_register_scalar_udf(
+  con,
+  name = "r_vec_plus_one",
+  fun = function(x) x + 1,
+  args = DOUBLE,
+  returns = DOUBLE,
+  mode = "vectorized",
+  side_effects = TRUE
+)
+
+dbGetQuery(con, "SELECT sum(r_vec_plus_one(i::DOUBLE)) AS total FROM range(5) AS t(i)")
+#>   total
+#> 1    15
+```
+
+Dynamic omitted arguments are not a guessing path. They are bind-time
+descriptors. The same R function below is registered once with an
+explicit nested signature and once as dynamic varargs; both calls see
+the same typed R value.
+
+``` r
+nested_summary <- function(x) {
+  paste0(x$id, ":", x$label, ":", x$payload$tag, "=", x$payload$value)
+}
+
+nested_declared_udf <- rducks_register_scalar_udf(
+  con,
+  name = "r_nested_declared",
+  fun = nested_summary,
+  args = STRUCT(
+    id = INTEGER,
+    label = ENUM(c("low", "high")),
+    payload = UNION(code = INTEGER, note = VARCHAR)
+  ),
+  returns = VARCHAR,
+  null_handling = "special"
+)
+
+nested_dynamic_udf <- rducks_register_scalar_udf(
+  con,
+  name = "r_nested_dynamic",
+  fun = nested_summary,
+  returns = VARCHAR,
+  null_handling = "special"
+)
+
+nested_sql <- "
+  struct_pack(
+    id := 7::INTEGER,
+    label := 'high'::ENUM('low', 'high'),
+    payload := union_value(note := 'ok')::UNION(code INTEGER, note VARCHAR)
+  )
+"
+
+nested_query <- sprintf(
+  paste(
+    "SELECT",
+    "  r_nested_declared(%1$s) AS declared,",
+    "  r_nested_dynamic(%1$s) AS dynamic",
+    sep = "\n"
+  ),
+  nested_sql
+)
+dbGetQuery(con, nested_query)
+#>         declared        dynamic
+#> 1 7:high:note=ok 7:high:note=ok
+```
+
+With `null_handling = "default"`, a top-level SQL `NULL` input produces
+a SQL `NULL` output without calling R. With `null_handling = "special"`,
+top-level SQL `NULL` values are passed as type-specific R missing
+values. Nested NULLs are part of the value: scalar children usually
+become typed `NA`, while nested composite NULLs become `NULL`.
+
+``` r
+null_special_udf <- rducks_register_scalar_udf(
+  con,
+  name = "r_null_special",
+  fun = function(x) if (is.na(x)) 5L else x,
+  args = INTEGER,
+  returns = INTEGER,
+  null_handling = "special"
+)
+
+dbGetQuery(con, "SELECT r_null_special(NULL::INTEGER) AS x")
+#>   x
+#> 1 5
+```
+
+For type-by-type details, use the exported reference tables:
+
+``` r
+rducks_mode_semantics()[, c("mode", "call_granularity", "input_shape")]
+#>         mode            call_granularity
+#> 1     scalar          one R call per row
+#> 2 vectorized one R call per DuckDB chunk
+#>                                                               input_shape
+#> 1 one scalar/composite R value per declared or dynamically bound argument
+#> 2     one R vector/list-column per declared or dynamically bound argument
+mapping <- rducks_argument_type_mapping(list(
+  INTEGER,
+  UUID,
+  DECIMAL(10, 2),
+  STRUCT(a = INTEGER[])
+))
+mapping[, c("duckdb_type", "r_value_class", "special_null_argument")]
+#>           duckdb_type  r_value_class special_null_argument
+#> 1             INTEGER        integer           NA_integer_
+#> 2                UUID    rducks_uuid                  NULL
+#> 3      DECIMAL(10, 2) rducks_decimal                  NULL
+#> 4 STRUCT(a INTEGER[])           list                  NULL
+```
+
+## Aggregates
+
+`rducks_register_aggregate()` registers R-backed DuckDB aggregates.
+Aggregate state is an R object preserved by the extension, not a
+serialized blob. The callbacks run on the recorded R thread and are not
+controlled by scalar-UDF execution plans.
+
+``` r
+sum_i32_aggregate <- rducks_register_aggregate(
+  con,
+  name = "r_sum_i32",
+  update = function(state, x) {
+    if (is.null(state)) state <- 0L
+    as.integer(state + x)
+  },
+  finalize = function(state) if (is.null(state)) NA_integer_ else state,
+  args = INTEGER,
+  returns = INTEGER
+)
+
+dbGetQuery(
+  con,
+  paste(
+    "SELECT r_sum_i32(i) AS total",
+    "FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)"
+  )
+)
+#>   total
+#> 1     3
+```
+
+## Table functions
+
+`rducks_register_table()` infers the number of SQL arguments from the R
+function formals and registers those inputs as DuckDB `ANY`. The result
+can be a data frame, a named list of columns, or `rducks_table_stream()`
+for scan-time batches. Column types are inferred from the returned
+columns, and the extension fills DuckDB output vectors directly from the
+R columns, with no wire serialization for the in-process scan.
+
+``` r
+rows_table <- rducks_register_table(
+  con,
+  name = "r_rows",
+  fun = function(n) data.frame(i = seq_len(as.integer(n))),
+  chunk_size = 2L
+)
+
+dbGetQuery(con, "SELECT * FROM r_rows(3) ORDER BY i")
+#>   i
+#> 1 1
+#> 2 2
+#> 3 3
+
+stream_rows_table <- rducks_register_table(
+  con,
+  name = "r_stream_rows",
+  fun = function(n) {
+    next_i <- 1L
+    limit <- as.integer(n)
+    rducks_table_stream(
+      prototype = data.frame(i = integer()),
+      next_batch = function(batch_size) {
+        if (next_i > limit) return(NULL)
+        hi <- min(limit, next_i + as.integer(batch_size) - 1L)
+        out <- data.frame(i = seq.int(next_i, hi))
+        next_i <<- hi + 1L
+        out
+      }
+    )
+  },
+  chunk_size = 2L
+)
+
+dbGetQuery(con, "SELECT sum(i) AS total FROM r_stream_rows(5)")
+#>   total
+#> 1    15
+```
+
+## Query streams
+
+`rducks_query_stream()` returns a query’s rows in DuckDB-sized batches
+as data frames, instead of an eager `DBI::dbGetQuery()` result. Each
+batch is materialized directly from DuckDB vectors to R values on the
+recorded R thread. `next_batch()` returns the next data frame or `NULL`
+at end of stream.
+
+``` r
+stream <- rducks_query_stream(con, "SELECT i::INTEGER AS i FROM range(1, 6) t(i)")
+stream$next_batch()
+#>   i
+#> 1 1
+#> 2 2
+#> 3 3
+#> 4 4
+#> 5 5
+stream$next_batch()
+#> NULL
+stream$close()
+```
+
+Because each batch is one DuckDB chunk that R materializes and then
+releases, memory stays bounded regardless of result size: the stream
+never holds the whole result. The query below produces ~8 million rows
+with a padded column (well over half a gigabyte if collected eagerly
+with `dbGetQuery()`), yet the resident set stays a small, roughly
+constant fraction of that.
+
+``` r
+rss_mb <- function() {
+  vm <- grep("VmRSS", tryCatch(readLines("/proc/self/status"), error = function(e) ""), value = TRUE)
+  if (length(vm)) round(as.numeric(gsub("[^0-9]", "", vm)) / 1024) else NA_real_
+}
+
+stream <- rducks_query_stream(
+  con,
+  "SELECT i, i * i AS sq, repeat('x', 64) AS pad FROM range(8000000) t(i)"
+)
+rss_at_open <- rss_mb()
+rows <- 0
+peak <- rss_at_open
+repeat {
+  batch <- stream$next_batch()
+  if (is.null(batch)) break
+  rows <- rows + nrow(batch)          # consume one chunk, then let it be GC'd
+  peak <- max(peak, rss_mb())
+}
+stream$close()
+data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
+#>    rows rss_at_open_mb peak_rss_mb
+#> 1 8e+06            168         249
+```
+
+The same streaming holds over arbitrary scans, including external
+table-function extensions. The chunk below streams a 15 GB BAM through a
+`read_bam()` scanner (the
+[duckhts](https://github.com/RGenomicsETL/duckhts) extension), capped at
+~30 seconds of pulling; resident memory stays a few hundred MB no matter
+how many reads are pulled. It runs only when the BAM is present locally.
+
+``` r
+DBI::dbExecute(con, "LOAD './duckhts.duckdb_extension'")   # locally built duckhts
+#> [1] 0
+
+stream <- rducks_query_stream(
+  con,
+  "SELECT QNAME, FLAG, RNAME, POS, MAPQ, CIGAR, SEQ, QUAL
+     FROM read_bam('NA12878.low_coverage.bam')"   # 15 GB on disk
+)
+bam_open <- rss_mb()
+reads <- 0
+peak <- bam_open
+deadline <- Sys.time() + 30
+repeat {
+  batch <- stream$next_batch()
+  if (is.null(batch) || Sys.time() > deadline) break
+  reads <- reads + nrow(batch)          # one chunk at a time, then GC'd
+  peak <- max(peak, rss_mb())
+}
+stream$close()
+data.frame(
+  bam_gb = round(file.size("NA12878.low_coverage.bam") / 1024^3, 1),
+  reads_streamed = reads,
+  rss_at_open_mb = bam_open,
+  peak_rss_mb = peak
+)
+#>   bam_gb reads_streamed rss_at_open_mb peak_rss_mb
+#> 1   15.1       11646976            254         286
+```
+
+## Execution plans
+
+Execution plans are fixed at scalar-UDF registration time and select the
+placement/concurrency backend for the recorded R thread.
+
+| Plan                                    | Engine              | Scalar mode | Vectorized mode | Notes                                                                                                                                                                                                  |
+|-----------------------------------------|---------------------|-------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `inproc` (`direct + inproc_concurrent`) | `direct_main_queue` | yes         | yes             | DuckDB workers enqueue callbacks and R work drains on the recorded R thread                                                                                                                            |
+| `ipc` (`wire + multiprocess_parallel`)  | `ipc_nng_pool`      | yes         | yes             | the extension marshals each chunk to a worker R process over NNG using the Quack wire codec; fixed-width scalars, varchar/blob, decimal, interval, enum, bit, and list/array/struct of supported types |
+
+`rducks_enable(con)` selects the in-process backend;
+`rducks_enable_inproc(con, threads = 4, external_threads = 1)` keeps R
+work on the recorded R thread while DuckDB workers run concurrently and
+queue their callbacks to it.
+
+For `transport = "ipc"`, register single-threaded under the plan (this
+starts the worker processes and broadcasts the UDF), then raise DuckDB
+threads so off-main callbacks fan out to the workers:
+
+``` r
+plan <- rducks_execution_plan("ipc", ipc_workers = 2L)
+rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
+rducks_register_scalar_udf(con, "r_par", function(x) x + 1L, args = INTEGER, returns = INTEGER)
+rducks_set_execution_plan(con, plan, threads = 3L, external_threads = 2L)
+dbGetQuery(con, "SELECT sum(r_par((i % 1000)::INTEGER)) AS total FROM range(20000) t(i)")
+```
+
+``` r
+plan <- rducks_execution_plan("inproc")
+plan
+#> <rducks_execution_plan>
+#>   plan_id:     direct+inproc_concurrent
+#>   engine_id:   direct_main_queue
+#>   transport:   inproc
+#>   concurrency: inproc_concurrent
+#>   reference:   no
+#>   implemented: yes
+#>   call shapes: scalar, vectorized
+
+# Register single-threaded, then raise DuckDB threads for concurrent execution
+# of the already-registered UDF; off-main worker callbacks queue to the
+# recorded R thread.
+rducks_register_scalar_udf(
+  con,
+  name = "r_inc",
+  fun = function(x) x + 1L,
+  args = INTEGER,
+  returns = INTEGER,
+  mode = "vectorized"
+)
+#> <rducks_scalar_udf_registration>
+#>   registered:      yes
+#>   name:            r_inc
+#>   evaluation_mode: vectorized
+#>   plan:            direct+serial
+#>   signature:       r_inc(INTEGER) -> INTEGER
+rducks_set_execution_plan(con, plan, threads = 4L, external_threads = 1L)
+dbGetQuery(con, "SELECT sum(r_inc((i % 1000)::INTEGER)) AS total FROM range(20000) t(i)")
+#>      total
+#> 1 10010000
+rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
+```
+
+### When worker-process execution wins
+
+`inproc` runs every R callback on the single recorded R thread, so an
+expensive per-chunk UDF serializes even while DuckDB scans in parallel.
+`transport = "ipc"` fans those chunks out to worker R processes, so the
+per-chunk cost overlaps once it is worth the marshalling. The benchmark
+registers the same sleeping vectorized UDF on three plans and runs each
+against one large parallel CSV scan. The UDF closes over a random R
+lookup vector; the third plan ships that global to the workers through
+[mori](https://shikokuchuo.net/mori/) shared memory
+(`ipc_globals_share = "mori"`). Timings are illustrative and
+machine-dependent.
+
+``` r
+set.seed(1)
+lookup <- sample.int(20L, 1000L, replace = TRUE)
+slow_lookup <- function(x) {
+  Sys.sleep(0.05)
+  x + lookup[[1L]]
+}
+
+duckdb_vector_size <- 2048L
+csv_rows <- duckdb_vector_size * 64L
+csv_pad <- strrep("x", 128L)
+csv_path <- tempfile("rducks-readme-csv-", fileext = ".csv")
+writeLines(
+  c("i,pad", paste0(seq.int(0L, csv_rows - 1L), ",", csv_pad)),
+  csv_path
+)
+
+ipc_workers <- 2L
+plans <- list(
+  inproc = rducks_execution_plan("inproc"),
+  ipc = rducks_execution_plan(
+    "ipc",
+    ipc_workers = ipc_workers,
+    ipc_timeout = 60,
+    ipc_globals = "lookup"
+  ),
+  ipc_mori = rducks_execution_plan(
+    "ipc",
+    ipc_workers = ipc_workers,
+    ipc_timeout = 60,
+    ipc_globals = "lookup",
+    ipc_globals_share = "mori"
+  )
+)
+udfs <- paste0("r_bench_", names(plans))
+
+# Register each UDF single-threaded under its plan; for the ipc plans this
+# starts the worker processes and broadcasts the UDF (and its globals).
+for (i in seq_along(plans)) {
+  rducks_set_execution_plan(con, plans[[i]], threads = 1L, external_threads = 1L)
+  rducks_register_scalar_udf(
+    con,
+    name = udfs[[i]],
+    fun = slow_lookup,
+    args = INTEGER,
+    returns = INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
+  )
+}
+
+run_plan <- function(label, udf, plan, threads, external_threads) {
+  rducks_set_execution_plan(con, plan, threads = threads, external_threads = external_threads)
+  elapsed <- system.time({
+    result <- DBI::dbGetQuery(con, sprintf(
+      paste(
+        "SELECT sum(%s((i %% 1000)::INTEGER)) AS total",
+        "FROM read_csv(%s, header = true,",
+        "columns = {'i': 'INTEGER', 'pad': 'VARCHAR'}, parallel = true)"
+      ),
+      DBI::dbQuoteIdentifier(con, udf),
+      DBI::dbQuoteString(con, csv_path)
+    ))
+  })[["elapsed"]]
+  data.frame(label = label, total = result$total[[1]], elapsed_sec = round(elapsed, 3))
+}
+
+benchmark <- rbind(
+  run_plan("inproc (single R thread)", udfs[[1]], plans[[1]],
+           threads = 1L, external_threads = 1L),
+  run_plan("ipc (2 workers)", udfs[[2]], plans[[2]],
+           threads = ipc_workers + 1L, external_threads = ipc_workers),
+  run_plan("ipc + mori (2 workers)", udfs[[3]], plans[[3]],
+           threads = ipc_workers + 1L, external_threads = ipc_workers)
+)
+unlink(csv_path, force = TRUE)
+rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
+                          threads = 1L, external_threads = 1L)
+benchmark
+#>                      label    total elapsed_sec
+#> 1 inproc (single R thread) 65961344       3.371
+#> 2          ipc (2 workers) 65961344       1.939
+#> 3   ipc + mori (2 workers) 65961344       1.929
+```
+
+## duckplyr integration
+
+`rducks_with_duckplyr()` and the `with.duckdb_connection()` method let
+ordinary R calls inside duckplyr expressions resolve to Rducks scalar
+UDFs, without writing `dd$...` calls. The bridge defaults to row-wise
+`mode = "scalar"` and can use `mode = "vectorized"` for vectorized
+helpers; its marshalling comes from the current Rducks execution plan.
+
+``` r
+demo_con <- DBI::dbConnect(
+  duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
+  dbdir = ":memory:"
+)
+Rducks::rducks_enable(demo_con, threads = "single")
+DBI::dbWriteTable(demo_con, "scores", data.frame(
+  id = 1:3,
+  x = c(2, 21, 34),
+  label = c("low", "high", "high")
+))
+
+scores <- duckplyr::read_sql_duckdb(
+  "SELECT * FROM scores",
+  con = demo_con,
+  prudence = "stingy"
+)
+local_score <- function(x, label) {
+  as.double(x + if (identical(label, "high")) 100 else 0)
+}
+
+with(
+  demo_con,
+  scores |>
+    dplyr::mutate(score = local_score(x, label)) |>
+    dplyr::select(id, score) |>
+    dplyr::collect(),
+  rducks_returns = list(local_score = DOUBLE)
+)
+#> # A tibble: 3 × 2
+#>      id score
+#> * <int> <dbl>
+#> 1     1     2
+#> 2     2   121
+#> 3     3   134
+
+Rducks::rducks_release(demo_con)
+DBI::dbDisconnect(demo_con, shutdown = TRUE)
+```
+
+## Build notes
+
+The source and vendored native dependencies used by `configure` live
+under `tools/ext/`. During source-package installation, `configure`
+writes the generated artifact to
+`inst/rducks_extension/build/rducks.duckdb_extension` in the build tree;
+after installation the runtime path is
+`rducks_extension/build/rducks.duckdb_extension` inside the installed
+package. `cleanup` removes only the generated artifact, not the source
+tree needed by `R CMD build`. This package-bundled extension layout
+follows precedents such as
+[Rduckhts](https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts).
+DuckDB C API headers are refreshed explicitly when the supported DuckDB
+version changes.
+
+``` sh
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.2
+```
+
+The extension uses DuckDB’s [C extension
+API](https://github.com/duckdb/duckdb/blob/main/src/include/duckdb/main/capi/header_generation/README.md)
+and unstable C extension ABI for connection/runtime access,
+scalar-function bind/init/state hooks, dynamic bind-time argument
+inspection, and selection-vector helpers. This table is generated from
+`tools/used_duckdb_unstable_api.R` when `README.Rmd` is rendered:
+
+| ABI group                                      | Functions used                                                                                                                                                                                                                                                                                              | Count |
+|------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------:|
+| `unstable_deprecated`                          | `duckdb_pending_prepared_streaming`, `duckdb_result_is_streaming`, `duckdb_stream_fetch_chunk`                                                                                                                                                                                                              |     3 |
+| `unstable_new_expression_functions`            | `duckdb_destroy_expression`, `duckdb_expression_return_type`                                                                                                                                                                                                                                                |     2 |
+| `unstable_new_scalar_function_functions`       | `duckdb_scalar_function_bind_get_argument`, `duckdb_scalar_function_bind_get_argument_count`, `duckdb_scalar_function_bind_get_extra_info`, `duckdb_scalar_function_bind_set_error`, `duckdb_scalar_function_set_bind`, `duckdb_scalar_function_set_bind_data`, `duckdb_scalar_function_set_bind_data_copy` |     7 |
+| `unstable_new_scalar_function_state_functions` | `duckdb_scalar_function_get_state`, `duckdb_scalar_function_init_get_bind_data`, `duckdb_scalar_function_init_get_extra_info`, `duckdb_scalar_function_init_set_error`, `duckdb_scalar_function_init_set_state`, `duckdb_scalar_function_set_init`                                                          |     6 |
+| `unstable_new_string_functions`                | `duckdb_value_to_string`                                                                                                                                                                                                                                                                                    |     1 |
+| `unstable_new_value_functions`                 | `duckdb_get_time_ns`                                                                                                                                                                                                                                                                                        |     1 |
+| `unstable_new_vector_functions`                | `duckdb_create_selection_vector`, `duckdb_destroy_selection_vector`, `duckdb_selection_vector_get_data_ptr`, `duckdb_vector_copy_sel`                                                                                                                                                                       |     4 |
+
+See `docs/BUILD.md` for the build and ABI details.
+
+## References
+
+- [DuckDB extension
+  overview](https://duckdb.org/docs/stable/extensions/overview)
+- [DuckDB C extension API
+  notes](https://github.com/duckdb/duckdb/blob/main/src/include/duckdb/main/capi/header_generation/README.md)
+- [NNG C library](https://nng.nanomsg.org/)
+- [nanonext and mirai](https://mirai.r-lib.org/)
+- [mori shared objects for R](https://shikokuchuo.net/mori/)
+- [DuckDB Quack extension](https://github.com/duckdb/duckdb-quack)
+- [Rduckhts bundled-extension
+  precedent](https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts)

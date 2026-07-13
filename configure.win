@@ -1,0 +1,167 @@
+#!/bin/sh
+# Windows configure script for Rducks.
+set -eu
+
+THIS_DIR=`dirname "$0"`
+THIS_DIR=`cd "$THIS_DIR" && pwd`
+EXT_SRC_DIR="${THIS_DIR}/tools/ext"
+EXT_INSTALL_DIR="${THIS_DIR}/inst/rducks_extension"
+DUCKDB_CAPI_HEADER="${EXT_SRC_DIR}/duckdb_capi/duckdb_extension.h"
+SRC_FILE="${EXT_SRC_DIR}/rducks_extension.c"
+BUILD_DIR="${EXT_INSTALL_DIR}/build"
+RAW_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension.raw"
+FINAL_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension"
+VENDOR_DIR="${EXT_SRC_DIR}/third_party"
+VENDOR_NNG_DIR="${VENDOR_DIR}/nng"
+VENDOR_MBEDTLS_DIR="${VENDOR_DIR}/mbedtls"
+
+if [ ! -f "${DUCKDB_CAPI_HEADER}" ]; then
+  echo "ERROR: DuckDB C API header not found at ${DUCKDB_CAPI_HEADER}"
+  echo "Package may not be built properly. Headers should be bundled before package build."
+  exit 1
+fi
+if [ ! -f "${SRC_FILE}" ]; then
+  echo "ERROR: Rducks extension source not found at ${SRC_FILE}"
+  exit 1
+fi
+USE_UNSTABLE_C_API="${USE_UNSTABLE_C_API:-1}"
+RDUCKS_EXTENSION_ABI_TYPE="${RDUCKS_EXTENSION_ABI_TYPE:-C_STRUCT_UNSTABLE}"
+if [ "${USE_UNSTABLE_C_API}" != "0" ] && [ "${USE_UNSTABLE_C_API}" != "1" ]; then
+  echo "ERROR: USE_UNSTABLE_C_API must be 0 or 1 (got '${USE_UNSTABLE_C_API}')"
+  exit 1
+fi
+case "${RDUCKS_EXTENSION_ABI_TYPE}" in
+  C_STRUCT_UNSTABLE) ;;
+  *)
+    echo "ERROR: Rducks requires RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE (got '${RDUCKS_EXTENSION_ABI_TYPE}')"
+    exit 1
+    ;;
+esac
+
+CC=`"${R_HOME}/bin/R" CMD config CC | cut -f1 -d' '`
+R_CPPFLAGS=`"${R_HOME}/bin/R" CMD config CPPFLAGS`
+R_INCLUDE_FLAGS=`"${R_HOME}/bin/R" CMD config --cppflags`
+R_CFLAGS=`"${R_HOME}/bin/R" CMD config CFLAGS`
+R_CPICFLAGS=`"${R_HOME}/bin/R" CMD config CPICFLAGS`
+R_LDFLAGS=`"${R_HOME}/bin/R" CMD config LDFLAGS`
+R_LD_FLAGS=`"${R_HOME}/bin/R" CMD config --ldflags`
+
+case " ${R_CPPFLAGS} ${R_INCLUDE_FLAGS} ${R_CFLAGS} ${R_CPICFLAGS} " in
+  *DUCKDB_EXTENSION_API_VERSION_UNSTABLE*)
+    if [ "${USE_UNSTABLE_C_API}" != "1" ]; then
+      echo "ERROR: unstable DuckDB C API macro detected, but USE_UNSTABLE_C_API=1 was not set"
+      echo "Set USE_UNSTABLE_C_API=1 or remove the macro from compiler flags."
+      exit 1
+    fi
+    ;;
+esac
+
+EXT_VERSION=`awk -F': *' '/^Version:/ {print $2; exit}' "${THIS_DIR}/DESCRIPTION" || true`
+if [ -z "${EXT_VERSION}" ]; then
+  EXT_VERSION="0.0.0"
+fi
+
+DUCKDB_HEADERS_JSON="${EXT_SRC_DIR}/duckdb_capi/duckdb_headers.json"
+DUCKDB_VERSION=`awk -F'"' '/"duckdb_ref"/ {print $4; exit}' "${DUCKDB_HEADERS_JSON}" 2>/dev/null || true`
+if [ -z "${DUCKDB_VERSION}" ]; then
+  DUCKDB_API_MAJOR=`awk '/DUCKDB_EXTENSION_API_VERSION_MAJOR/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
+  DUCKDB_API_MINOR=`awk '/DUCKDB_EXTENSION_API_VERSION_MINOR/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
+  DUCKDB_API_PATCH=`awk '/DUCKDB_EXTENSION_API_VERSION_PATCH/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
+  if [ -n "${DUCKDB_API_MAJOR}" ] && [ -n "${DUCKDB_API_MINOR}" ] && [ -n "${DUCKDB_API_PATCH}" ]; then
+    DUCKDB_VERSION="v${DUCKDB_API_MAJOR}.${DUCKDB_API_MINOR}.${DUCKDB_API_PATCH}"
+  else
+    DUCKDB_VERSION="v1.2.0"
+  fi
+fi
+
+ABI_TYPE="C_STRUCT_UNSTABLE"
+UNSTABLE_CPPFLAGS=""
+if [ "${USE_UNSTABLE_C_API}" != "1" ]; then
+  echo "ERROR: Rducks requires USE_UNSTABLE_C_API=1"
+  exit 1
+fi
+if [ "${USE_UNSTABLE_C_API}" = "1" ]; then
+  UNSTABLE_CPPFLAGS="-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=${DUCKDB_VERSION} -DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"${DUCKDB_VERSION}\""
+fi
+
+OS_NAME=`uname -s`
+ARCH_NAME=`uname -m`
+DUCKDB_PLATFORM=""
+case "${OS_NAME}" in
+  *MINGW*|*MSYS*|*CYGWIN*)
+    case "${ARCH_NAME}" in
+      x86_64) DUCKDB_PLATFORM="windows_amd64_mingw";;
+      aarch64|arm64) DUCKDB_PLATFORM="windows_arm64_mingw";;
+    esac
+    ;;
+esac
+if [ -z "${DUCKDB_PLATFORM}" ]; then
+  echo "ERROR: Unsupported Windows platform: ${OS_NAME}/${ARCH_NAME}"
+  exit 1
+fi
+
+mkdir -p "${BUILD_DIR}"
+
+if [ ! -f "${VENDOR_DIR}/CMakeLists.txt" ] || [ ! -f "${VENDOR_NNG_DIR}/include/nng/nng.h" ] || \
+   [ ! -f "${VENDOR_MBEDTLS_DIR}/include/mbedtls/version.h" ]; then
+  echo "ERROR: vendored NNG/Mbed TLS sources are missing. Run tools/vendor_nng_mbedtls.R."
+  exit 1
+fi
+
+RDUCKS_CMAKE="${CMAKE:-}"
+if [ -n "${RDUCKS_CMAKE}" ]; then
+  case "${RDUCKS_CMAKE}" in
+    */*)
+      if [ ! -x "${RDUCKS_CMAKE}" ]; then
+        echo "ERROR: CMAKE points to a non-executable path: ${RDUCKS_CMAKE}"
+        exit 1
+      fi
+      ;;
+    *)
+      if ! command -v "${RDUCKS_CMAKE}" >/dev/null 2>&1; then
+        echo "ERROR: CMAKE is set but not executable on PATH: ${RDUCKS_CMAKE}"
+        exit 1
+      fi
+      RDUCKS_CMAKE=`command -v "${RDUCKS_CMAKE}"`
+      ;;
+  esac
+elif command -v cmake >/dev/null 2>&1; then
+  RDUCKS_CMAKE=`command -v cmake`
+else
+  echo "ERROR: cmake is required to build the vendored NNG library"
+  echo "Set CMAKE=/path/to/cmake if cmake is installed outside PATH."
+  exit 1
+fi
+
+VENDOR_BUILD_DIR="${BUILD_DIR}/vendor_nng"
+"${RDUCKS_CMAKE}" -S "${VENDOR_DIR}" -B "${VENDOR_BUILD_DIR}" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER="${CC}"
+"${RDUCKS_CMAKE}" --build "${VENDOR_BUILD_DIR}" --target nng --parallel
+VENDOR_NNG_CPPFLAGS="-DNNG_STATIC_LIB -I${VENDOR_NNG_DIR}/include"
+VENDOR_NNG_LIBS="${VENDOR_BUILD_DIR}/nng/libnng.a -lws2_32 -lmswsock -ladvapi32"
+
+CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2"
+CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -I${THIS_DIR}/src -I${EXT_SRC_DIR}/duckdb_capi ${VENDOR_NNG_CPPFLAGS}"
+SHARED_FLAGS="-shared -Wl,--exclude-all-symbols -Wl,--exclude-libs,ALL"
+
+echo "---------- Building Rducks DuckDB extension (Windows) ----------"
+echo "DuckDB unstable C API: ${USE_UNSTABLE_C_API}"
+echo "DuckDB extension metadata ABI type: ${ABI_TYPE}"
+echo "Vendored NNG support: 1"
+echo "CMake: ${RDUCKS_CMAKE}"
+${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} -o "${RAW_EXT_FILE}" "${SRC_FILE}" ${VENDOR_NNG_LIBS} ${R_LD_FLAGS}
+rm -rf "${VENDOR_BUILD_DIR}"
+
+echo "Appending DuckDB extension metadata..."
+"${R_HOME}/bin/Rscript" "${THIS_DIR}/tools/append_extension_metadata.R" \
+  --library-file "${RAW_EXT_FILE}" \
+  --out-file "${FINAL_EXT_FILE}" \
+  --extension-name "rducks" \
+  --duckdb-platform "${DUCKDB_PLATFORM}" \
+  --duckdb-version "${DUCKDB_VERSION}" \
+  --extension-version "${EXT_VERSION}" \
+  --abi-type "${ABI_TYPE}"
+
+rm -f "${RAW_EXT_FILE}"
+echo "Built ${FINAL_EXT_FILE}"
