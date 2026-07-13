@@ -11,6 +11,7 @@
 #include "staticpath.h"
 #include "fs.h"
 #include <Rinternals.h>
+#include <limits>
 
 // ============================================================================
 // Utility functions
@@ -65,7 +66,7 @@ const std::string& getStatusDescription(int code) {
     statusDescs[413] = "Request Entity Too Large";
     statusDescs[414] = "Request-URI Too Long";
     statusDescs[415] = "Unsupported Media Type";
-    statusDescs[416] = "Requested Range Not Satisifable";
+    statusDescs[416] = "Range Not Satisfiable";
     statusDescs[417] = "Expectation Failed";
     statusDescs[500] = "Internal Server Error";
     statusDescs[501] = "Not Implemented";
@@ -79,6 +80,111 @@ const std::string& getStatusDescription(int code) {
     return it->second;
   else
     return unknown;
+}
+
+enum ByteRangeStatus {
+  BYTE_RANGE_IGNORE,
+  BYTE_RANGE_SATISFIABLE,
+  BYTE_RANGE_UNSATISFIABLE
+};
+
+struct ByteRange {
+  ByteRangeStatus status;
+  uint64_t first;
+  uint64_t last;
+
+  ByteRange(ByteRangeStatus status_ = BYTE_RANGE_IGNORE,
+            uint64_t first_ = 0,
+            uint64_t last_ = 0) :
+    status(status_), first(first_), last(last_) {}
+};
+
+bool parse_uint64_saturating(const std::string& value, uint64_t* result) {
+  if (value.empty()) {
+    return false;
+  }
+
+  uint64_t parsed = 0;
+  const uint64_t max_value = std::numeric_limits<uint64_t>::max();
+  for (std::string::const_iterator it = value.begin(); it != value.end(); ++it) {
+    if (*it < '0' || *it > '9') {
+      return false;
+    }
+
+    const uint64_t digit = static_cast<uint64_t>(*it - '0');
+    if (parsed > (max_value - digit) / 10) {
+      parsed = max_value;
+    } else {
+      parsed = parsed * 10 + digit;
+    }
+  }
+
+  *result = parsed;
+  return true;
+}
+
+ByteRange parse_byte_range(const std::string& header, uint64_t file_size) {
+  const size_t equals = header.find('=');
+  if (equals == std::string::npos ||
+      strcasecmp(trim(header.substr(0, equals)).c_str(), "bytes") != 0) {
+    return ByteRange();
+  }
+
+  const std::string spec = trim(header.substr(equals + 1));
+  if (spec.empty() || spec.find(',') != std::string::npos) {
+    return ByteRange();
+  }
+
+  const size_t dash = spec.find('-');
+  if (dash == std::string::npos || spec.find('-', dash + 1) != std::string::npos) {
+    return ByteRange();
+  }
+
+  const std::string first_text = spec.substr(0, dash);
+  const std::string last_text = spec.substr(dash + 1);
+  uint64_t first = 0;
+  uint64_t last = 0;
+
+  if (first_text.empty()) {
+    uint64_t suffix_length = 0;
+    if (!parse_uint64_saturating(last_text, &suffix_length)) {
+      return ByteRange();
+    }
+    if (file_size == 0 || suffix_length == 0) {
+      return ByteRange(BYTE_RANGE_UNSATISFIABLE);
+    }
+    if (suffix_length > file_size) {
+      suffix_length = file_size;
+    }
+    return ByteRange(
+      BYTE_RANGE_SATISFIABLE,
+      file_size - suffix_length,
+      file_size - 1
+    );
+  }
+
+  if (!parse_uint64_saturating(first_text, &first)) {
+    return ByteRange();
+  }
+  if (file_size == 0 || first >= file_size) {
+    return ByteRange(BYTE_RANGE_UNSATISFIABLE);
+  }
+
+  if (last_text.empty()) {
+    last = file_size - 1;
+  } else {
+    if (!parse_uint64_saturating(last_text, &last)) {
+      return ByteRange();
+    }
+    if (first > last) {
+      return ByteRange(BYTE_RANGE_UNSATISFIABLE);
+    }
+    if (last >= file_size) {
+      last = file_size - 1;
+    }
+  }
+
+  return ByteRange(BYTE_RANGE_SATISFIABLE, first, last);
 }
 
 // A generic HTTP response to send when an error (uncaught in the R code)
@@ -537,6 +643,9 @@ std::shared_ptr<HttpResponse> RWebApplication::staticFileResponse(
     }
   }
 
+  const uint64_t full_size = pDataSource->size();
+  const time_t file_mtime = pDataSource->getMtime();
+
   // Use local_path instead of subpath, because if the subpath is "/foo/" and
   // *(sp.options.indexhtml) is true, then the local_path will be
   // "/foo/index.html". We need to use the latter to determine mime type.
@@ -554,7 +663,6 @@ std::shared_ptr<HttpResponse> RWebApplication::staticFileResponse(
   // this, compare the If-Modified-Since header to the file's mtime.
   bool client_cache_is_valid = false;
   if (pRequest->hasHeader("If-Modified-Since")) {
-    time_t file_mtime = pDataSource->getMtime();
     time_t if_mod_since = parse_http_date_string(pRequest->getHeader("If-Modified-Since"));
 
     if (file_mtime != 0 && if_mod_since != 0 && file_mtime <= if_mod_since) {
@@ -568,6 +676,7 @@ std::shared_ptr<HttpResponse> RWebApplication::staticFileResponse(
 
   // Default status code at this point is 200.
   int status_code = 200;
+  ByteRange byte_range;
 
   // This is the pointer that will be passed to the new HttpResponse. We'll
   // start by setting it to point to the same thing as pDataSource, but it can
@@ -582,6 +691,26 @@ std::shared_ptr<HttpResponse> RWebApplication::staticFileResponse(
   if (client_cache_is_valid) {
     pDataSource2.reset();
     status_code = 304;
+  } else if (method == "GET" && pRequest->hasHeader("Range")) {
+    bool range_allowed = true;
+    if (pRequest->hasHeader("If-Range")) {
+      const time_t if_range = parse_http_date_string(pRequest->getHeader("If-Range"));
+      range_allowed = file_mtime != 0 && if_range != 0 && file_mtime <= if_range;
+    }
+
+    if (range_allowed) {
+      byte_range = parse_byte_range(pRequest->getHeader("Range"), full_size);
+      if (byte_range.status == BYTE_RANGE_UNSATISFIABLE) {
+        pDataSource2.reset();
+        status_code = 416;
+      } else if (byte_range.status == BYTE_RANGE_SATISFIABLE) {
+        const uint64_t range_length = byte_range.last - byte_range.first + 1;
+        if (!pDataSource->setRange(byte_range.first, range_length)) {
+          return error_response(pRequest, 500);
+        }
+        status_code = 206;
+      }
+    }
   }
 
   std::shared_ptr<HttpResponse> pResponse = std::shared_ptr<HttpResponse>(
@@ -614,13 +743,32 @@ std::shared_ptr<HttpResponse> RWebApplication::staticFileResponse(
   }
 
   if (status_code != 304) {
-    // Set the Content-Length here so that both GET and HEAD requests will get
-    // it. If we didn't set it here, the response for the GET would
-    // automatically set the Content-Length (by using the FileDataSource), but
-    // the response for the HEAD would not.
-    respHeaders.push_back(std::make_pair("Content-Length", toString(pDataSource->size())));
-    respHeaders.push_back(std::make_pair("Content-Type", content_type));
-    respHeaders.push_back(std::make_pair("Last-Modified", http_date_string(pDataSource->getMtime())));
+    respHeaders.push_back(std::make_pair("Accept-Ranges", "bytes"));
+
+    if (status_code == 416) {
+      respHeaders.push_back(std::make_pair("Content-Length", "0"));
+      respHeaders.push_back(std::make_pair(
+        "Content-Range",
+        "bytes */" + toString(full_size)
+      ));
+    } else {
+      // Set Content-Length explicitly so HEAD receives the same representation
+      // metadata as GET even though it has no response body.
+      const uint64_t content_length = status_code == 206
+        ? byte_range.last - byte_range.first + 1
+        : full_size;
+      respHeaders.push_back(std::make_pair("Content-Length", toString(content_length)));
+      respHeaders.push_back(std::make_pair("Content-Type", content_type));
+      respHeaders.push_back(std::make_pair("Last-Modified", http_date_string(file_mtime)));
+
+      if (status_code == 206) {
+        respHeaders.push_back(std::make_pair(
+          "Content-Range",
+          "bytes " + toString(byte_range.first) + "-" +
+            toString(byte_range.last) + "/" + toString(full_size)
+        ));
+      }
+    }
   }
 
   return pResponse;

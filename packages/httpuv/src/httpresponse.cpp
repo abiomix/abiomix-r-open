@@ -84,7 +84,7 @@ void HttpResponse::writeResponse() {
   if (contentEncoding) {
     // The response already has a Content-Encoding
     gzip = false;
-  } else if (_statusCode == 101 || _pBody == nullptr) {
+  } else if (_statusCode == 101 || _statusCode == 206 || _pBody == nullptr) {
     gzip = false;
   } else {
     RequestHeaders h = _pRequest->headers();

@@ -2,6 +2,11 @@
 
 * Establish the Abiomix-maintained public fork and record upstream provenance.
 
+* Static file serving now supports a single HTTP byte range, including
+  open-ended and suffix ranges, `If-Range`, bounded file reads, and correct
+  `206`, `416`, `Accept-Ranges`, and `Content-Range` behavior. Multipart range
+  requests are ignored and receive the complete representation.
+
 * Closed #426: Uses native symbol registration for calls into compiled code, resulting in performance gains from not having to perform a lookup on each call. (#427)
 
 * Fixed installation failures on macOS caused by the bundled libuv build trying to regenerate autotools files when only some tools (e.g., automake) are present. (#430)

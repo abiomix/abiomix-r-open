@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "winutils.h"
 #include <Windows.h>
+#include <limits>
 
 // Windows gets a whole different implementation of FileDataSource
 // so we can use FILE_FLAG_DELETE_ON_CLOSE, which is not available
@@ -56,30 +57,59 @@ FileDataSourceResult FileDataSource::initialize(const std::string& path, bool ow
     return FDS_ERROR;
   }
 
+  _remaining = static_cast<uint64_t>(_length.QuadPart);
+
   return FDS_OK;
 }
 
+bool FileDataSource::setRange(uint64_t offset, uint64_t length) {
+  const uint64_t max_offset = static_cast<uint64_t>(std::numeric_limits<LONGLONG>::max());
+  if (offset > max_offset || length > max_offset) {
+    return false;
+  }
+
+  LARGE_INTEGER distance;
+  distance.QuadPart = static_cast<LONGLONG>(offset);
+  if (!SetFilePointerEx(_hFile, distance, NULL, FILE_BEGIN)) {
+    return false;
+  }
+
+  _length.QuadPart = static_cast<LONGLONG>(length);
+  _remaining = length;
+  return true;
+}
+
 uint64_t FileDataSource::size() const {
-  return _length.QuadPart;
+  return static_cast<uint64_t>(_length.QuadPart);
 }
 
 uv_buf_t FileDataSource::getData(size_t bytesDesired) {
   ASSERT_BACKGROUND_THREAD()
-  if (bytesDesired == 0)
+  if (bytesDesired == 0 || _remaining == 0)
     return uv_buf_init(NULL, 0);
 
-  char* buffer = (char*)malloc(bytesDesired);
+  uint64_t bytesToRead = static_cast<uint64_t>(bytesDesired);
+  if (bytesToRead > _remaining) {
+    bytesToRead = _remaining;
+  }
+  if (bytesToRead > static_cast<uint64_t>(MAXDWORD)) {
+    bytesToRead = static_cast<uint64_t>(MAXDWORD);
+  }
+
+  char* buffer = (char*)malloc(static_cast<size_t>(bytesToRead));
   if (!buffer) {
     throw std::runtime_error("Couldn't allocate buffer");
   }
 
   DWORD bytesRead;
-  if (!ReadFile(_hFile, buffer, bytesDesired, &bytesRead, NULL)) {
+  if (!ReadFile(_hFile, buffer, static_cast<DWORD>(bytesToRead), &bytesRead, NULL)) {
 
     err_printf("Error reading: %d\n", GetLastError());
     free(buffer);
     throw std::runtime_error("File read failed");
   }
+
+  _remaining -= static_cast<uint64_t>(bytesRead);
 
   return uv_buf_init(buffer, bytesRead);
 }

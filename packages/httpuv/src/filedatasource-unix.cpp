@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
+#include <limits>
 
 FileDataSourceResult FileDataSource::initialize(const std::string& path, bool owned) {
   // This can be called from either the main thread or background thread.
@@ -36,6 +37,7 @@ FileDataSourceResult FileDataSource::initialize(const std::string& path, bool ow
     }
 
     _length = info.st_size;
+    _remaining = static_cast<uint64_t>(_length);
 
     if (owned && unlink(path.c_str())) {
       // Print this (on either main or background thread), since we're not
@@ -48,14 +50,33 @@ FileDataSourceResult FileDataSource::initialize(const std::string& path, bool ow
   }
 }
 
+bool FileDataSource::setRange(uint64_t offset, uint64_t length) {
+  const uint64_t max_offset = static_cast<uint64_t>(std::numeric_limits<off_t>::max());
+  if (offset > max_offset || length > max_offset) {
+    return false;
+  }
+
+  if (lseek(_fd, static_cast<off_t>(offset), SEEK_SET) == static_cast<off_t>(-1)) {
+    return false;
+  }
+
+  _length = static_cast<off_t>(length);
+  _remaining = length;
+  return true;
+}
+
 uint64_t FileDataSource::size() const {
-  return _length;
+  return static_cast<uint64_t>(_length);
 }
 
 uv_buf_t FileDataSource::getData(size_t bytesDesired) {
   ASSERT_BACKGROUND_THREAD()
-  if (bytesDesired == 0)
+  if (bytesDesired == 0 || _remaining == 0)
     return uv_buf_init(NULL, 0);
+
+  if (static_cast<uint64_t>(bytesDesired) > _remaining) {
+    bytesDesired = static_cast<size_t>(_remaining);
+  }
 
   char* buffer = (char*)malloc(bytesDesired);
   if (!buffer) {
@@ -68,6 +89,8 @@ uv_buf_t FileDataSource::getData(size_t bytesDesired) {
     free(buffer);
     throw std::runtime_error("File read failed");
   }
+
+  _remaining -= static_cast<uint64_t>(bytesRead);
 
   return uv_buf_init(buffer, bytesRead);
 }

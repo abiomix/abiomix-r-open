@@ -21,16 +21,24 @@ class FileDataSource : public DataSource {
   int _fd;
   off_t _length;
 #endif
+  uint64_t _remaining;
   std::string _lastErrorMessage;
 
 public:
-  FileDataSource() {}
+  FileDataSource() : _remaining(0) {
+#ifdef _WIN32
+    _hFile = INVALID_HANDLE_VALUE;
+#else
+    _fd = -1;
+#endif
+  }
 
   ~FileDataSource() {
     close();
   }
 
   FileDataSourceResult initialize(const std::string& path, bool owned);
+  bool setRange(uint64_t offset, uint64_t length);
   uint64_t size() const;
   uv_buf_t getData(size_t bytesDesired);
   void freeData(uv_buf_t buffer);

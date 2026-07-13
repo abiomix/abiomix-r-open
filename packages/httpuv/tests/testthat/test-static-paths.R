@@ -91,6 +91,121 @@ test_that("Basic static file serving", {
   expect_equal(h$`content-type`, "text/plain")
 })
 
+test_that("Static files support single HTTP byte ranges", {
+  s <- startServer(
+    "127.0.0.1",
+    randomPort(),
+    list(staticPaths = list("/" = test_path("apps/content")))
+  )
+  on.exit(s$stop())
+
+  url <- local_url("/data.txt", s$getPort())
+  full_size <- length(data_file_content)
+  get_range <- function(value, ...) {
+    headers <- c(list(Range = value), list(...))
+    handle <- do.call(handle_setheaders, c(list(new_handle()), headers))
+    fetch(url, handle, gzip = FALSE)
+  }
+
+  r <- get_range("bytes=0-3")
+  h <- parse_headers_list(r$headers)
+  expect_identical(r$status_code, 206L)
+  expect_identical(r$content, data_file_content[1:4])
+  expect_identical(h$`accept-ranges`, "bytes")
+  expect_identical(h$`content-range`, paste0("bytes 0-3/", full_size))
+  expect_identical(h$`content-length`, "4")
+
+  r <- get_range("bytes=5-")
+  expect_identical(r$status_code, 206L)
+  expect_identical(r$content, data_file_content[6:full_size])
+
+  r <- get_range("bytes=-5")
+  expect_identical(r$status_code, 206L)
+  expect_identical(r$content, data_file_content[(full_size - 4):full_size])
+
+  r <- get_range(paste0("bytes=", full_size - 2, "-999"))
+  h <- parse_headers_list(r$headers)
+  expect_identical(r$content, data_file_content[(full_size - 1):full_size])
+  expect_identical(
+    h$`content-range`,
+    paste0("bytes ", full_size - 2, "-", full_size - 1, "/", full_size)
+  )
+
+  r <- get_range(paste0("bytes=", full_size, "-"))
+  h <- parse_headers_list(r$headers)
+  expect_identical(r$status_code, 416L)
+  expect_length(r$content, 0)
+  expect_identical(h$`accept-ranges`, "bytes")
+  expect_identical(h$`content-range`, paste0("bytes */", full_size))
+  expect_identical(h$`content-length`, "0")
+
+  # Unsupported multipart and malformed ranges are ignored as allowed by HTTP.
+  r <- get_range("bytes=0-1,4-5")
+  expect_identical(r$status_code, 200L)
+  expect_identical(r$content, data_file_content)
+
+  r <- get_range("bytes=nope")
+  expect_identical(r$status_code, 200L)
+  expect_identical(r$content, data_file_content)
+})
+
+test_that("Static byte ranges respect representation preconditions", {
+  s <- startServer(
+    "127.0.0.1",
+    randomPort(),
+    list(staticPaths = list("/" = test_path("apps/content")))
+  )
+  on.exit(s$stop())
+
+  url <- local_url("/data.txt", s$getPort())
+  full <- fetch(url, gzip = FALSE)
+  full_headers <- parse_headers_list(full$headers)
+
+  matching <- handle_setheaders(
+    new_handle(),
+    Range = "bytes=0-3",
+    `If-Range` = full_headers$`last-modified`
+  )
+  r <- fetch(url, matching, gzip = FALSE)
+  expect_identical(r$status_code, 206L)
+  expect_identical(r$content, data_file_content[1:4])
+
+  stale_date <- http_date_string(parse_http_date(full_headers$`last-modified`) - 1)
+  stale <- handle_setheaders(
+    new_handle(),
+    Range = "bytes=0-3",
+    `If-Range` = stale_date
+  )
+  r <- fetch(url, stale, gzip = FALSE)
+  expect_identical(r$status_code, 200L)
+  expect_identical(r$content, data_file_content)
+
+  # This server does not generate strong validators, so an ETag-form If-Range
+  # cannot match and the complete representation is returned.
+  etag <- handle_setheaders(
+    new_handle(),
+    Range = "bytes=0-3",
+    `If-Range` = '"unknown"'
+  )
+  r <- fetch(url, etag, gzip = FALSE)
+  expect_identical(r$status_code, 200L)
+
+  head <- handle_setheaders(new_handle(nobody = TRUE), Range = "bytes=0-3")
+  r <- fetch(url, head, gzip = FALSE)
+  h <- parse_headers_list(r$headers)
+  expect_identical(r$status_code, 200L)
+  expect_length(r$content, 0)
+  expect_identical(h$`content-length`, as.character(length(data_file_content)))
+
+  encoded <- handle_setheaders(new_handle(), Range = "bytes=0-3")
+  encoded <- handle_setopt(encoded, accept_encoding = "gzip")
+  r <- fetch(url, encoded)
+  h <- parse_headers_list(r$headers)
+  expect_identical(r$status_code, 206L)
+  expect_identical(r$content, data_file_content[1:4])
+  expect_null(h$`content-encoding`)
+})
+
 
 test_that("Missing file fallthrough", {
   s <- startServer(
