@@ -30,6 +30,7 @@ is authorized to license. It cannot remove upstream obligations. In particular:
 | `Rducks` | GPL-3.0-or-later | Abiomix-owned R/native bridge; vendored NNG and Mbed TLS retain their notices and terms. |
 | `Rminibwa` | GPL-2.0-or-later | Abiomix-owned R bindings; `minibwa`, `libsais`, QSufSort, and BWT-SW components retain their terms. |
 | `RsimdDispatch` | GPL-2.0-or-later | Abiomix-owned package contributions only; bundled SIMDe headers retain their upstream MIT terms and attribution. |
+| `Rtinycc` | GPL-3.0-or-later | Abiomix-owned package contributions only; bundled TinyCC remains LGPL-2.1 and the adapted `callme` helper retains its MIT attribution. |
 | `Ropendal` | GPL-3.0-or-later | Abiomix-owned R/Rust bridge; Apache OpenDAL and other crates retain their terms. |
 | `htmxr` | GPL-2.0-or-later for the Abiomix fork | Upstream `htmxr` remains available under MIT; only Abiomix-owned fork changes can be offered under separate commercial terms. |
 | `s7contract` | GPL-3.0-or-later | Abiomix-owned code, subject to confirmation of contribution ownership. |

@@ -1,3 +1,9 @@
+# Rtinycc 0.1.11.9001
+
+- Publish the current TinyCC CLI and library package from the Abiomix public
+  monorepo so downstream native-package validation can resolve it from the
+  Abiomix R-universe.
+
 # Rtinycc 0.1.11.9000
 
 - Add TinyCC SIMD bytecode examples showing CPU feature detection with `cpuid`/`xgetbv` and selected SSE2/AVX2 instructions emitted through `.byte` for mnemonics TinyCC does not parse.

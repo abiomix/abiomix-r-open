@@ -39,3 +39,6 @@ src/*.o
 ^\.sync$
 ^Rducks$
 ^patch_protect\.py$
+^COMMERCIAL-LICENSE\.md$
+^UPSTREAM\.dcf$
+^UPSTREAM\.md$

@@ -1,0 +1,8 @@
+Package: Rtinycc
+Repository: https://github.com/sounkou-bioinfo/Rtinycc
+Commit: f4207c016c5698a9a667103c51f6ed88c69df42c
+Imported: 2026-07-13
+Method: git subtree --squash
+Subdirectory: packages/Rtinycc
+Upstream-License: GPL (>= 3)
+Bundled-TinyCC-License: LGPL-2.1
