@@ -1,0 +1,8 @@
+Package: STITCH
+Repository: https://github.com/sounkou-bioinfo/STITCH
+Original-Repository: https://github.com/rwdavies/STITCH
+Commit: e5dc6880d241f5f1482b9eccfe166776a5807fac
+Imported: 2026-07-13
+Method: git subtree split STITCH; git subtree --squash
+Subdirectory: packages/STITCH
+Upstream-License: GPL (>= 3) | file LICENSE

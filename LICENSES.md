@@ -32,6 +32,9 @@ is authorized to license. It cannot remove upstream obligations. In particular:
 | `Ropendal` | GPL-3.0-or-later | Abiomix-owned R/Rust bridge; Apache OpenDAL and other crates retain their terms. |
 | `htmxr` | GPL-2.0-or-later for the Abiomix fork | Upstream `htmxr` remains available under MIT; only Abiomix-owned fork changes can be offered under separate commercial terms. |
 | `s7contract` | GPL-3.0-or-later | Abiomix-owned code, subject to confirmation of contribution ownership. |
+| `httpuv` | GPL-2.0-or-later | Abiomix-owned range-serving patches only; the combined fork and bundled libraries retain all upstream terms. |
+| `STITCH` | GPL-3.0-or-later | Abiomix-owned patches only; the combined STITCH derivative remains GPL-3.0-or-later. |
+| `QUILT` | GPL-3.0-or-later | Abiomix-owned patches only; the combined QUILT derivative remains GPL-3.0-or-later. |
 
 The same rule applies to future forks. Abiomix modifications to `QUILT`,
 `STITCH`, `httpuv`, or other GPL projects may be licensed separately only to the

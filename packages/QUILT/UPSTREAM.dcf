@@ -1,0 +1,8 @@
+Package: QUILT
+Repository: https://github.com/sounkou-bioinfo/QUILT
+Original-Repository: https://github.com/rwdavies/QUILT
+Commit: a8a7ed3e8ed8f68e3259023308c9319f42ad512d
+Imported: 2026-07-13
+Method: git subtree split QUILT; git subtree --squash
+Subdirectory: packages/QUILT
+Upstream-License: GPL (>= 3) | file LICENSE

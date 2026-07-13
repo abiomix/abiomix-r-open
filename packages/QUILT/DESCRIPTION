@@ -1,12 +1,17 @@
 Package: QUILT
 Type: Package
 Title: QUILT
-Version: 2.0.4
-Date: 2025-06-22
+Version: 2.0.4.9000
+Date: 2026-07-13
 Authors@R: c(
-    person("Robert", "Davies", , "robertwilliamdavies@gmail.com", role = c("aut", "cre")),
-    person("Zilong", "Li", , "zilong.dk@gmail.com", role = c("aut"))
-           )
+    person(given = "Sounkou Mahamane", family = "Toure",
+           email = "sounkoutoure@gmail.com", role = c("aut", "cre"),
+           comment = "Maintainer of the Abiomix fork"),
+    person(given = "Abiomix FZ LLC", role = c("cph", "fnd"),
+           comment = "Copyright holder and funder of Abiomix contributions"),
+    person("Robert", "Davies", , "robertwilliamdavies@gmail.com", role = "aut"),
+    person("Zilong", "Li", , "zilong.dk@gmail.com", role = "aut")
+  )
 Description: QUILT2 is an R and C++ program for fast genotype calling from sequencing reads using a large reference panel. QUILT2 is accurate and versatile, able to handle imputation from short read, long read, ancient DNA and cell-free DNA from NIPT.
 Installation: To install, first install dependencies, then run the
         install.packages command, pointing to the downloaded tarball
@@ -19,8 +24,15 @@ Remotes:
 Imports: Rcpp
 LinkingTo: Rcpp, RcppArmadillo, RcppEigen (>= 0.3.4.0.0)
 RoxygenNote: 7.3.2
-License: GPL | file LICENSE
+License: GPL (>= 3) | file LICENSE
 SystemRequirements: C++17
 NeedsCompilation: yes
 Suggests: testthat (>= 3.0.0)
 Config/testthat/edition: 3
+Additional_repositories: https://abiomix.r-universe.dev
+URL: https://github.com/abiomix/abiomix-r-open,
+    https://github.com/rwdavies/QUILT
+BugReports: https://github.com/abiomix/abiomix-r-open/issues
+Config/abiomix/public-license: GPL-3.0-or-later
+Config/abiomix/commercial-license: Separate written agreement for Abiomix-owned contributions
+Config/abiomix/license-policy: https://github.com/abiomix/abiomix-r-open/blob/main/LICENSES.md

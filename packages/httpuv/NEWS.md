@@ -1,5 +1,7 @@
 # httpuv (development version)
 
+* Establish the Abiomix-maintained public fork and record upstream provenance.
+
 * Closed #426: Uses native symbol registration for calls into compiled code, resulting in performance gains from not having to perform a lookup on each call. (#427)
 
 * Fixed installation failures on macOS caused by the bundled libuv build trying to regenerate autotools files when only some tools (e.g., automake) are present. (#430)

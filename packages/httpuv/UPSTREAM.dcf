@@ -1,0 +1,7 @@
+Package: httpuv
+Repository: https://github.com/rstudio/httpuv
+Commit: c758c542f9e3216264f332d7d9e6675adb79798a
+Imported: 2026-07-13
+Method: git subtree --squash
+Subdirectory: packages/httpuv
+Upstream-License: GPL (>= 2) | file LICENSE

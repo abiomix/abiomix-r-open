@@ -1,10 +1,15 @@
 Type: Package
 Package: httpuv
 Title: HTTP and WebSocket Server Library
-Version: 1.6.16.9000
+Version: 1.6.16.9001
 Authors@R: c(
+    person(given = "Sounkou Mahamane", family = "Toure",
+           email = "sounkoutoure@gmail.com", role = c("aut", "cre"),
+           comment = "Maintainer of the Abiomix fork"),
+    person(given = "Abiomix FZ LLC", role = c("cph", "fnd"),
+           comment = "Copyright holder and funder of Abiomix contributions"),
     person("Joe", "Cheng", , "joe@posit.co", role = "aut"),
-    person("Winston", "Chang", , "winston@posit.co", role = c("aut", "cre")),
+    person("Winston", "Chang", , "winston@posit.co", role = "aut"),
     person("Posit, PBC", role = c("cph", "fnd"),
            comment = c(ROR = "03wc8by49")),
     person("Hector", "Corrada Bravo", role = "ctb"),
@@ -52,8 +57,10 @@ Description: Provides low-level socket and protocol support for handling
     libraries, both of which were developed by Joyent, Inc. (See LICENSE
     file for libuv and http-parser license information.)
 License: GPL (>= 2) | file LICENSE
-URL: https://rstudio.github.io/httpuv/, https://github.com/rstudio/httpuv
-BugReports: https://github.com/rstudio/httpuv/issues
+URL: https://github.com/abiomix/abiomix-r-open,
+    https://rstudio.github.io/httpuv/,
+    https://github.com/rstudio/httpuv
+BugReports: https://github.com/abiomix/abiomix-r-open/issues
 Depends:
     R (>= 2.15.1)
 Imports:
@@ -78,6 +85,10 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 SystemRequirements: GNU make, zlib
+Additional_repositories: https://abiomix.r-universe.dev
+Config/abiomix/public-license: GPL-2.0-or-later
+Config/abiomix/commercial-license: Separate written agreement for Abiomix-owned contributions
+Config/abiomix/license-policy: https://github.com/abiomix/abiomix-r-open/blob/main/LICENSES.md
 Collate:
     'RcppExports.R'
     'httpuv-package.R'
