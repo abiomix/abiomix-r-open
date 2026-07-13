@@ -1,3 +1,10 @@
+# Rminibwa 0.4.0-0.0.1.9000
+
+- Update the bundled `minibwa` sources to upstream v0.4 / `MB_VERSION`
+  `0.4-r400` at commit `b2dcea9b43c02cef47556f993fbd54bc0002cd4a`.
+- Include upstream's heavily clipped alignment rescoring improvement and SAM
+  `PG-CL` subcommand fix.
+
 # Rminibwa 0.3.0-0.0.1.9000
 
 - Add a MinGW/Rtools-only `kthread.c` dead-return guard after `pthread_exit()`

@@ -12,7 +12,7 @@
 
 Expected development notes:
 
-1. New submission / development version `0.3.0-0.0.1.9000`.
+1. New submission / development version `0.4.0-0.0.1.9000`.
 2. GitHub URLs may be reported unavailable until the public repository and
    GitHub Pages site are live.
 3. The non-portable `-mno-omit-leaf-frame-pointer` flag is injected by the
@@ -27,5 +27,5 @@ Expected development notes:
 - Examples, tests, and vignettes use temporary files and clean up after
   themselves.
 - Tests use at most two cores; native examples request one indexing thread.
-- `RsimdDispatch` is required from `https://sounkou-bioinfo.r-universe.dev`
+- `RsimdDispatch` is required from `https://abiomix.r-universe.dev`
   until the needed development version is on CRAN.
