@@ -1,0 +1,17 @@
+Authors@R: c(
+    person(
+        given = "Sounkou Mahamane",
+        family = "Toure",
+        email = "sounkoutoure@gmail.com",
+        role = c("aut", "cre")
+    ),
+    person(
+        given = "Abiomix FZ LLC",
+        role = c("cph", "fnd")
+    )
+)
+
+# Add and retain every upstream author, contributor, copyright holder, and
+# funder. Use `cre` only for the actual package maintainer. The Abiomix FZ LLC
+# copyright role covers Abiomix contributions and does not supersede upstream
+# ownership or bundled-source licenses.

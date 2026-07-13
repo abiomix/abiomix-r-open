@@ -1,0 +1,15 @@
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rcheck/
+*.tar.gz
+*.tgz
+*.o
+*.so
+*.dll
+*.dylib
+*.a
+src/Makevars
+.DS_Store
+
