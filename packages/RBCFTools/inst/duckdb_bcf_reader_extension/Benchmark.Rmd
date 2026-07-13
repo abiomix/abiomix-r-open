@@ -1,0 +1,217 @@
+---
+title: "BCF Reader Benchmarks"
+output: github_document
+params:
+  bcf_path: "../../test_very_large.bcf"
+  region: "22:20000000-21000000"
+  duckdb_ext: "build/bcf_reader.duckdb_extension"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+## Overview
+
+Quick, reproducible timing comparisons between:
+
+- `bcftools view` streamed to `/dev/null` in two modes:
+  - **Text emit** (`-Ov`): forces VCF string formatting (slow path)
+  - **Binary emit** (`-Ou`): skips VCF formatting (fairer vs DuckDB)
+- DuckDB `bcf_read()` via the packaged extension (projection-pushed `COUNT(*)`)
+
+The large input (`test_very_large.bcf`) is expected to live locally (never committed); generated from GLIMPSE-imputed 1000 Genomes data. Each command is run twice by default to surface “cold-ish” vs “warm-ish” cache timing (adjust `n_runs` below).
+
+## Prerequisites
+
+- `bcftools` available on `PATH`
+- DuckDB CLI installed and `duckdb` R package (for rendering)
+- Built extension at `params$duckdb_ext` (`make` in this folder)
+- Large BCF at `params$bcf_path` (defaults to `test_very_large.bcf` in this directory)
+
+```{r paths, eval=TRUE}
+bcf_path <- params$bcf_path
+bcf_path
+region <- params$region
+duckdb_ext <- params$duckdb_ext
+
+has_bcf <- file.exists(bcf_path)
+has_ext <- file.exists(duckdb_ext)
+ build_dir <- file.path(tempdir(), "bcf_reader")
+if(!has_ext)  {
+  duckdb_ext <- RBCFTools::bcf_reader_build(build_dir, verbose = FALSE)
+  has_ext <- TRUE
+}
+can_run <- has_bcf && has_ext
+
+if (!has_bcf) message("BCF not found: ", bcf_path, ". Benchmarks will be skipped.")
+if (!has_ext) message("DuckDB extension not found: ", duckdb_ext, ". Build with `make` first; benchmarks will be skipped.")
+
+data.frame(
+  resource = c("bcf_path", "duckdb_ext"),
+  path = c(bcf_path, duckdb_ext),
+  exists = c(has_bcf, has_ext)
+)
+```
+
+## Benchmarks
+
+Timings are single runs using `system.time()` for wall-clock comparisons; adjust or repeat as needed. Region queries mirror full-file timings but with `-r` / `region :=`.
+
+```{r helpers, eval=TRUE}
+run_cmd <- function(cmd) {
+  t <- system.time({
+    system(cmd, intern = TRUE, ignore.stdout = TRUE, ignore.stderr = FALSE)
+  })
+  c(elapsed = unname(t["elapsed"]),
+    user = unname(t["user.self"]),
+    system = unname(t["sys.self"]))
+}
+
+n_runs <- 2  # adjust to change cold/warm repetition
+
+time_runs <- function(cmd, runs = n_runs) {
+  if (!can_run) return(NULL)
+  times <- t(vapply(seq_len(runs), function(i) run_cmd(cmd), numeric(3)))
+  data.frame(
+    run = seq_len(runs),
+    elapsed = times[, "elapsed"],
+    user = times[, "user"],
+    system = times[, "system"],
+    cache_state = ifelse(seq_len(runs) == 1, "cold-ish", "warm-ish")
+  )
+}
+
+time_expr <- function(expr, runs = 1L, enabled = can_run) {
+  if (!enabled) return(NULL)
+  times <- t(vapply(seq_len(runs), function(i) {
+    t <- system.time(force(expr))
+    c(elapsed = unname(t["elapsed"]),
+      user = unname(t["user.self"]),
+      system = unname(t["sys.self"]))
+  }, numeric(3)))
+  data.frame(
+    run = seq_len(nrow(times)),
+    elapsed = times[, "elapsed"],
+    user = times[, "user"],
+    system = times[, "system"],
+    cache_state = ifelse(seq_len(nrow(times)) == 1, "cold-ish", "warm-ish")
+  )
+}
+```
+
+### bcftools view — text VCF emit (full file)
+
+```{r bcftools-full, eval=can_run}
+cmd_bcftools_full_text <- sprintf("bcftools view -Ov %s > /dev/null", shQuote(bcf_path))
+res_bcftools_full_text <- time_runs(cmd_bcftools_full_text)
+res_bcftools_full_text
+```
+
+### bcftools view — binary BCF emit (full file, fairer)
+
+```{r bcftools-full-bin, eval=can_run}
+cmd_bcftools_full_bin <- sprintf("bcftools view -Ou %s > /dev/null", shQuote(bcf_path))
+res_bcftools_full_bin <- time_runs(cmd_bcftools_full_bin)
+res_bcftools_full_bin
+```
+
+### bcftools view — text VCF emit (region)
+
+```{r bcftools-region, eval=can_run}
+cmd_bcftools_region_text <- sprintf("bcftools view -Ov -r %s %s > /dev/null", shQuote(region), shQuote(bcf_path))
+res_bcftools_region_text <- time_runs(cmd_bcftools_region_text)
+res_bcftools_region_text
+```
+
+### bcftools view — binary BCF emit (region, fairer)
+
+```{r bcftools-region-bin, eval=can_run}
+cmd_bcftools_region_bin <- sprintf("bcftools view -Ou -r %s %s > /dev/null", shQuote(region), shQuote(bcf_path))
+res_bcftools_region_bin <- time_runs(cmd_bcftools_region_bin)
+res_bcftools_region_bin
+```
+
+### DuckDB bcf_read (full file)
+
+```{r duckdb-full, eval=can_run}
+cmd_duckdb_full <- sprintf(
+  "duckdb -unsigned -c \"LOAD %s; SELECT COUNT(*) FROM bcf_read(%s);\"",
+  shQuote(duckdb_ext),
+  shQuote(bcf_path)
+)
+res_duckdb_full <- time_runs(cmd_duckdb_full)
+res_duckdb_full
+```
+
+### DuckDB bcf_read (region)
+
+```{r duckdb-region, eval=can_run}
+cmd_duckdb_region <- sprintf(
+  "duckdb -unsigned -c \"LOAD %s; SELECT COUNT(*) FROM bcf_read(%s, region := %s);\"",
+  shQuote(duckdb_ext),
+  shQuote(bcf_path),
+  shQuote(region)
+)
+res_duckdb_region <- time_runs(cmd_duckdb_region)
+res_duckdb_region
+```
+
+### Parquet conversion: 4 threads vs 10 threads (DuckDB extension)
+
+Compares `vcf_to_parquet_duckdb()` (via the bcf_reader extension) with different thread counts. Skips if prerequisites are missing.
+
+```{r parquet-setup}
+parquet_can_run <- has_bcf && has_ext && requireNamespace("RBCFTools", quietly = TRUE)
+
+parquet_4threads <- tempfile(fileext = ".parquet")
+parquet_10threads <- tempfile(fileext = ".parquet")
+```
+
+
+```{r parquet-bench-10, eval=parquet_can_run}
+
+# 10-thread conversion via DuckDB bcf_reader extension (requires index)
+res_parquet_10threads <- if (RBCFTools::vcf_has_index(bcf_path)) {
+  time_expr({
+    RBCFTools::vcf_to_parquet_duckdb(
+      input_file = bcf_path,
+      output_file = parquet_10threads,
+      extension_path = duckdb_ext,
+      compression = "zstd",
+      row_group_size = 100000L,
+      threads = 10L
+    )
+  }, enabled = parquet_can_run)
+} else {
+  NULL
+}
+```
+
+```{r parquet-bench, eval=parquet_can_run}
+# 4-thread conversion via DuckDB bcf_reader extension
+res_parquet_4threads <- time_expr({
+  RBCFTools::vcf_to_parquet_duckdb(
+    input_file = bcf_path,
+    output_file = parquet_4threads,
+    extension_path = duckdb_ext,
+    compression = "zstd",
+    row_group_size = 100000L,
+    threads = 4L
+  )
+}, enabled = parquet_can_run)
+
+res_parquet_4threads
+res_parquet_10threads
+
+unlink(c(parquet_4threads, parquet_10threads))
+```
+
+
+## Notes
+
+- These timings are single passes; rerun and average for more stable numbers.
+- DuckDB `COUNT(*)` benefits from projection pushdown (no INFO/FORMAT decoding). The bcftools binary runs (`-Ou`) avoid text formatting and are the fairest comparison; `-Ov` reflects worst-case text emit.
+- Ensure the file and its index are co-located with fast storage (local SSD preferred).
+- Adjust `region` to match indexed contigs present in `test_very_large.bcf`.
+- If required resources are missing, chunks are skipped and a status table is shown above.
