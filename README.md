@@ -74,9 +74,15 @@ tests/upstream/  retained upstream tests where applicable
 tests/abiomix/   added behavior, conformance, and regression fixtures
 ```
 
-The repository has no blanket license over package sources. Each package and
-bundled upstream component keeps its own declared license. See
-[`LICENSES.md`](LICENSES.md).
+Repository-authored documentation, CI, templates, and tools are available under
+GPL-2.0-or-later. Public package releases use the GPL version declared in each
+package's `DESCRIPTION`. Abiomix FZ LLC can also offer a separate commercial
+license for Abiomix-owned code under a written agreement.
+
+The commercial option does not relicense third-party code. Bundled upstream
+components retain their own licenses, and a combined work that includes GPL
+code remains subject to the applicable GPL. See [`LICENSES.md`](LICENSES.md)
+and [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md).
 
 ## Repositories
 

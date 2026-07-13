@@ -4,6 +4,8 @@ Version: 0.3.0-0.0.1.9000
 Authors@R: c(
     person(given = "Sounkou Mahamane", family = "Toure",
       email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
+    person(given = "Abiomix FZ LLC", role = c("cph", "fnd"),
+      comment = "Copyright holder and funder of Abiomix contributions"),
     person(given = "Dana-Farber Cancer Institute", role = "cph",
       comment = "Copyright holder of upstream minibwa"),
     person(given = "Ilya", family = "Grebnov", role = "cph",
@@ -35,7 +37,11 @@ VignetteBuilder: knitr
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
-Additional_repositories: https://sounkou-bioinfo.r-universe.dev
-URL: https://github.com/sounkou-bioinfo/Rminibwa,
+Additional_repositories: https://abiomix.r-universe.dev
+URL: https://github.com/abiomix/abiomix-r-open,
+    https://github.com/sounkou-bioinfo/Rminibwa,
     https://sounkou-bioinfo.github.io/Rminibwa/
-BugReports: https://github.com/sounkou-bioinfo/Rminibwa/issues
+BugReports: https://github.com/abiomix/abiomix-r-open/issues
+Config/abiomix/public-license: GPL-2.0-or-later
+Config/abiomix/commercial-license: Separate written agreement for Abiomix-owned contributions
+Config/abiomix/license-policy: https://github.com/abiomix/abiomix-r-open/blob/main/LICENSES.md

@@ -1,0 +1,7 @@
+Package: Ropendal
+Repository: https://github.com/sounkou-bioinfo/Ropendal
+Commit: 3fb2f41e49966a1cf594762cf1a9414b248ba430
+Imported: 2026-07-13
+Method: git subtree --squash
+Subdirectory: packages/Ropendal
+Upstream-License: GPL (>= 3)

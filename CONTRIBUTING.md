@@ -20,3 +20,9 @@ All Abiomix-maintained packages follow the repository `Authors@R` policy:
 Sounkou Mahamane Toure is an author, and Abiomix FZ LLC is recorded as copyright
 holder and funder for Abiomix contributions. Upstream attribution is additive
 and must never be removed.
+
+Contributions are accepted for public distribution under the package's declared
+GPL terms and must state whether the contributor has signed an agreement that
+permits Abiomix FZ LLC to offer the contribution under an alternative commercial
+license. Until that authority is documented, the contribution is GPL-only and
+must not be represented as commercially licensable by Abiomix.

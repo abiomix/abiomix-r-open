@@ -1,0 +1,7 @@
+Package: htmxr
+Repository: https://github.com/hyperverse-r/htmxr
+Commit: c913f9e3a104a59f99366729ad2da73cd3b3e723
+Imported: 2026-07-13
+Method: git subtree --squash
+Subdirectory: packages/htmxr
+Upstream-License: MIT

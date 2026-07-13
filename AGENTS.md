@@ -27,6 +27,11 @@ reference data never belong here.
   `cph` and `fnd`.
 - Retain every upstream author/copyright/funder entry. Abiomix FZ LLC's `cph`
   attribution covers Abiomix contributions, not upstream source ownership.
+- Keep the package's public `License:` field on the applicable GPL version.
+  Alternative commercial terms are separate written agreements, never an
+  undocumented `License:` shortcut.
+- Do not claim authority to commercially relicense upstream or third-party code.
+  Update `LICENSES.md` when package composition or ownership changes.
 
 ## Validation
 

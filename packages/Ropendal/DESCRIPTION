@@ -5,6 +5,8 @@ Version: 0.0.1.9000
 Authors@R: c(
     person(given = "Sounkou Mahamane", family = "Toure",
            email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
+    person(given = "Abiomix FZ LLC", role = c("cph", "fnd"),
+           comment = "Copyright holder and funder of Abiomix contributions"),
     person("Apache OpenDAL contributors", role = "cph",
            comment = "Apache OpenDAL Rust crate"),
     person("Hiroaki", "Yutani", role = "cph",
@@ -17,8 +19,10 @@ Description: Provides a byte-oriented abstract filesystem interface for R backed
     'nanonext', pluggable raw-vector serializers, and a native C API for direct
     async byte access by other R packages.
 License: GPL (>= 3)
-URL: https://github.com/sounkou-bioinfo/Ropendal, https://sounkou-bioinfo.github.io/Ropendal
-BugReports: https://github.com/sounkou-bioinfo/Ropendal/issues
+URL: https://github.com/abiomix/abiomix-r-open,
+    https://github.com/sounkou-bioinfo/Ropendal,
+    https://sounkou-bioinfo.github.io/Ropendal
+BugReports: https://github.com/abiomix/abiomix-r-open/issues
 SystemRequirements: Cargo (Rust's package manager), rustc >= 1.88.0, GNU make
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -26,3 +30,6 @@ RoxygenNote: 7.3.3
 Imports: S7
 Suggests: tinytest, roxygen2, rmarkdown, knitr, pkgdown, Rtinycc
 VignetteBuilder: knitr
+Config/abiomix/public-license: GPL-3.0-or-later
+Config/abiomix/commercial-license: Separate written agreement for Abiomix-owned contributions
+Config/abiomix/license-policy: https://github.com/abiomix/abiomix-r-open/blob/main/LICENSES.md
