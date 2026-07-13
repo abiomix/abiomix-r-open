@@ -1,0 +1,24 @@
+Rducks bundles third-party native components as private source snapshots for
+building the DuckDB extension. During installation, only the compiled extension
+artifact is installed under `rducks_extension/build/`; the source snapshots stay
+in the source package under `tools/ext/` and are not copied into the installed
+package.
+
+Bundled component: NNG
+Upstream repository: https://github.com/nanomsg/nng
+Bundled version: 1.11.0
+Source package path: tools/ext/third_party/nng
+Copyright:
+- Staysail Systems, Inc. <info@staysail.tech>
+- Capitar IT Group BV <info@capitar.com>
+License: MIT License
+Source package license file: tools/ext/third_party/nng/LICENSE.txt
+
+Bundled component: Mbed TLS
+Upstream repository: https://github.com/Mbed-TLS/mbedtls
+Bundled version: 3.6.5
+Source package path: tools/ext/third_party/mbedtls
+Copyright:
+- The Mbed TLS Contributors
+License: Apache License 2.0 OR GNU General Public License 2.0 or later
+Source package license file: tools/ext/third_party/mbedtls/LICENSE
