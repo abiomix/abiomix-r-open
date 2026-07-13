@@ -1,0 +1,32 @@
+# include vcfpp.h from vcfppR
+# HTS_INCL = $(shell "${R_HOME}/bin${R_ARCH_BIN}/Rscript" -e 'cat(system.file("include/", package = "vcfppR", mustWork = TRUE))')
+
+HTS_SRC = ./htslib-1.21/
+
+HTSLIB = $(HTS_SRC)/libhts.a -lz -lbz2 -llzma -lcurl
+
+HASDEFLATE := $(shell grep -q "define HAVE_LIBDEFLATE 1" 'htslib-1.21/config.h' && echo yes || echo no)
+ifeq ($(HASDEFLATE), yes)
+	HTSLIB += -ldeflate
+endif
+
+
+HTSLIB_CPPFLAGS = -D_FILE_OFFSET_BITS=64 -fPIC -DNDEBUG
+
+INCL = -I../inst/include/ -I$(HTS_SRC) -I.
+
+PKG_CPPFLAGS = $(INCL) $(HTSLIB_CPPFLAGS) 
+PKG_LIBS =  $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS) $(HTSLIB)
+
+SEQ_OBJECTS = SeqLib/GenomicRegion.o SeqLib/RefGenome.o SeqLib/BamWriter.o SeqLib/BamReader.o SeqLib/BamRecord.o SeqLib/BamHeader.o
+STITCH_SOURCES = bam_access.cpp diploid.cpp haploid.cpp hwe.cpp phasing.cpp reference-binary.cpp reference-vcf.cpp writers.cpp bam_linker.cpp functions.cpp heuristics.cpp obsolete.cpp reference.cpp speed_test.cpp
+STITCH_OBJECTS = $(patsubst %.cpp,%.o,$(STITCH_SOURCES))
+
+OBJECTS = RcppExports.o $(SEQ_OBJECTS) $(STITCH_OBJECTS)
+
+.PHONY: all
+
+all : $(SHLIB)
+
+$(SHLIB): $(OBJECTS)
+
