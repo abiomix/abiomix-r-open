@@ -1,0 +1,103 @@
+# RsimdDispatch 0.1.2.9001
+
+* Fix template generation: `.def` files (operations.def, signatures.def,
+  backends.def) are now treated as text and receive prefix substitution when
+  `use_simd_dispatch()` deploys the scaffold — previously they were
+  binary-copied, causing the generated configure to fail to compile.
+* Fix prefix substitution: use boundary-aware regex (`\b`) for all four
+  C-prefix patterns so that env-var names like `RSD_LOG_PREFIX` and shell
+  variables like `SRC_DIR_PATH` are no longer mangled in generated packages.
+* Fix `simd_backend()` test: allow `"partial:<name>"` return value when an
+  explicitly-selected backend implements only a subset of operations (e.g.
+  SSE2/SSE41 implement `count_nonzero` but not `convolve1d`).
+* Fix `sd_register_kernel_table()` sentinel: detect the canonical sentinel
+  `{SD_OP_COUNT, SD_SIG_NONE, NULL}` explicitly; a `NULL` invoke on any
+  other row is now an error rather than silently truncating the table.
+* Add operation and signature catalog order-invariant checks in
+  `sd_init_dispatch()` to catch mis-ordered `.def` files at startup.
+* Use the `CallType` argument in `signatures.def` to generate a
+  `SdSignatureCatalogEntry` catalog with `name` and `call_size`
+  (`sizeof(call_type)`); expose `sd_signature_name()` in the public API.
+* Update `simd_info()` documentation to list `"partial:<name>"` as a
+  possible `selected_backend` value.
+* Update vignette build-layout table: dispatch core and CPU feature
+  detection are staged in `src/rsd-lib/`, not compiled by the ordinary
+  `src/Makevars` path.
+
+# RsimdDispatch 0.1.2.9000
+
+* Open the post-0.1.2 development cycle.
+* Clarify many-operation maintenance guidance: repetitive dispatch metadata,
+  C registration, and R wrapper metadata should come from one source of truth;
+  hand-written code should focus on backend kernels.
+* Move the downstream-use vignette after runtime dispatch semantics in the
+  pkgdown article order and shorten its many-operation guidance.
+* Trim redundant backend-selection wording from README and dispatch semantics
+  documentation.
+* Move the staged-kernel-only `kernel_common.h` helper from `src/` into
+  `tools/simdDispatch/kernels/` and the copied template kernel directory, and update
+  downstream-template docs for that layout.
+* Replace short-lived C preprocessor expansion blocks in `src/` with explicit
+  operation-table declarations, dispatch wrappers, and native registration
+  entries.
+* Move dispatch to a NumKong-inspired resolved operation table: backend files
+  register the operation slots they implement, `"auto"` resolves the best
+  backend per operation, and `simd_info()` reports both operation-level backend
+  availability and the selected backend for each operation.
+* Add `Dockerfile.musl-check` for Alpine Linux / musl `R CMD check` smoke
+  testing in repository-specific CI.
+* Split the staged-kernel registration ABI into `tools/simdDispatch/kernels/kernel_api.h`
+  so backend kernels no longer include private dispatch headers from `src/`.
+  Backend files now expose `SdKernelDef` tables consumed by the generic
+  dispatch core, keeping operation names and operation-specific wrappers out of
+  `tools/simdDispatch/simd_dispatch.c`.
+
+# RsimdDispatch 0.1.2
+
+* Add WebAssembly SIMD128 (`wasm_simd128`) staged-kernel support for
+  Emscripten/webR builds using SIMDe's `<simde/wasm/simd128.h>` backend and
+  `SIMDE_WASM_SIMD128_NATIVE` configure probing.
+* Extend `simd_info()` diagnostics with `cpu_wasm_simd128` and include
+  `wasm_simd128` in compiled, available, and SIMDe-native backend sets when
+  built by a SIMD128-capable WebAssembly toolchain.
+* Add webR check tooling based on the local `rwasm::build()` + Node `webr`
+  workflow used by related packages.
+* Generate explicit SIMDe include flags in `src/Makevars` and quote configure
+  include paths so copied templates are more robust in downstream libraries.
+* Eagerly initialize dispatch at package load, exercise copied-template runtime
+  behavior in CI, and remove legacy comma-separated backend-list C helpers.
+* Switch dispatch from one function pointer per operation to a backend `SdKernelDef`
+  operation table. Backend diagnostics now reuse the C backend metadata table,
+  and the R setter no longer hardcodes backend names.
+* Add a dispatched `convolve1d()` full one-dimensional convolution demo, using
+  SIMDe inner-loop multiply-add kernels for numeric vectors, and include it in
+  tests, documentation, webR checks, and evaluated benchmarks.
+* Document the current extension path for adding operations while retaining
+  RsimdDispatch's staged-object R package build model.
+
+# RsimdDispatch 0.1.1 (2026-05-28)
+
+* Stage scalar and optional SIMD kernel objects during `configure`, then link
+  them through generated `src/Makevars` with the baseline R API, CPU feature
+  detection, and dispatcher code.
+* Move demo kernels from `src/` to `tools/simdDispatch/kernels/` so copied templates keep
+  build-time kernel sources separate from ordinary R package `src/` files.
+* Reword `DESCRIPTION` to avoid incoming spell-check notes for backend acronym
+  names while keeping detailed backend names in user-facing documentation.
+
+# RsimdDispatch 0.1.0
+
+Initial release.
+
+* Provides a working runtime SIMD dispatch example for R packages, using one
+  shared library with scalar, SSE2, SSE4.1, AVX2, AVX-512, and NEON kernel
+  objects where supported by the compiler and CPU.
+* Exports `count_nonzero()`, `simd_set_backend()`, `simd_backend()`, and
+  `simd_info()` to demonstrate safe same-process backend selection and
+  diagnostics.
+* Adds `use_simd_dispatch()` and `simd_dispatch_template_path()` for package
+  authors who want to copy and adapt the C dispatch scaffold.
+* Vendors the header-only SIMDe library for downstream packages through
+  `LinkingTo: RsimdDispatch`.
+* Adds `simde_info()` and SIMDe fields in `simd_info()` to report the vendored
+  SIMDe version and pinned upstream commit.
