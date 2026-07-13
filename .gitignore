@@ -1,0 +1,18 @@
+.Rproj.user
+.Rhistory
+.RData
+.httr-oauth
+.DS_Store
+.quarto
+README.html
+docs
+Rtinycc*tar.gz
+tccquickr/
+tccquickr*.tar.gz
+Rtinycc.Rcheck/*
+inst/tinycc
+# tinycc
+src/tinycc
+inst/tinycc
+tinycc
+.sync
