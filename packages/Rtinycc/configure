@@ -1,0 +1,159 @@
+#!/bin/sh
+
+THISDIR=$(cd "$(dirname "$0")" && pwd)
+CONFIG_LOG="$THISDIR/config.log"
+MAKE=$("${R_HOME}/bin/R" CMD config MAKE)
+CC=$("${R_HOME}/bin/R" CMD config CC | awk '{print $1}')
+AR=$("${R_HOME}/bin/R" CMD config AR | awk '{print $1}')
+TINYCC_SRC="$THISDIR/src/tinycc"
+TINYCC_DEST="$THISDIR/inst/tinycc"
+
+: > "$CONFIG_LOG"
+
+log() {
+    printf '%s\n' "$1" | tee -a "$CONFIG_LOG"
+}
+
+run_logged() {
+    log "RUN: $*"
+    "$@" >> "$CONFIG_LOG" 2>&1
+}
+
+cleanup_source() {
+    if [ -d "$TINYCC_SRC" ]; then
+        log "Removing temporary source tree: $TINYCC_SRC"
+        rm -rf "$TINYCC_SRC" >> "$CONFIG_LOG" 2>&1 || true
+        # added now to see what went wrong if the compilation failed on tinycc step
+        cat "$CONFIG_LOG" 
+    fi
+}
+
+trap cleanup_source EXIT
+
+log "Starting configure for Rtinycc"
+log "Package source directory: $THISDIR"
+log "TinyCC source directory: $TINYCC_SRC"
+log "TinyCC install directory: $TINYCC_DEST"
+
+log "Unpacking vendored TinyCC source"
+run_logged "${R_HOME}/bin/Rscript" "$THISDIR/tools/vendortinycc.R" unpack || exit 1
+
+if [ ! -d "$TINYCC_SRC" ]; then
+    log "ERROR: TinyCC source directory not found after unpack"
+    exit 1
+fi
+
+if [ -d "$TINYCC_DEST" ]; then
+    log "Removing existing TinyCC installation"
+    rm -rf "$TINYCC_DEST" >> "$CONFIG_LOG" 2>&1 || exit 1
+fi
+run_logged mkdir -p "$TINYCC_DEST/lib" "$TINYCC_DEST/include" || exit 1
+
+cd "$TINYCC_SRC" || exit 1
+log "Building TinyCC in $PWD"
+
+if [ "$(uname)" = "Darwin" ]; then
+    # Strip both -flat_namespace and the paired `-undefined warning` that
+    # upstream injects on clang < 15. Modern ld rejects `-undefined warning`
+    # under the default -twolevel_namespace, so removing only -flat_namespace
+    # breaks the link on the macOS oldrel arm64 (Big Sur, clang 14) builder.
+    log "Patching TinyCC Makefile for macOS (drop -flat_namespace, -undefined warning)"
+    run_logged sed -i '' \
+        -e 's/-flat_namespace//g' \
+        -e 's/-undefined warning//g' \
+        "$TINYCC_SRC/Makefile" || exit 1
+    SHLIB=libtcc.dylib
+else
+    SHLIB=libtcc.so
+fi
+log "Selected shared library target: $SHLIB"
+
+TCC_CONFIG_EXTRA=""
+if [ "$(uname)" = "Linux" ]; then
+    if ldd --version 2>&1 | grep -qi musl || \
+        ls /lib/ld-musl-*.so.1 >/dev/null 2>&1 || \
+        ls /usr/lib/ld-musl-*.so.1 >/dev/null 2>&1 || \
+        "$CC" -dumpmachine 2>/dev/null | grep -qi musl; then
+        log "Detected musl libc; enabling TinyCC musl configuration"
+        TCC_CONFIG_EXTRA="--config-musl"
+    fi
+fi
+
+run_logged ./configure \
+    --prefix="$TINYCC_DEST" \
+    --cc="$CC" \
+    --ar="$AR" \
+    --extra-cflags=-fPIC \
+    $TCC_CONFIG_EXTRA \
+    --debug || exit 1
+
+run_logged "$MAKE" CONFIG_static=no libtcc.a "$SHLIB" libtcc1.a tcc || exit 1
+
+# Install artifacts manually instead of `make install`. Upstream's install-unx
+# target depends on BSD/GNU `install` quirks and a strict $(call IF,...) over
+# files that can be missing on arm64-osx; bypassing it removes a class of
+# CRAN macOS failures while keeping the layout the package expects.
+log "Installing TinyCC artifacts (replicates install-unx, minus docs)"
+run_logged mkdir -p \
+    "$TINYCC_DEST/bin" \
+    "$TINYCC_DEST/include" \
+    "$TINYCC_DEST/lib" \
+    "$TINYCC_DEST/lib/tcc" \
+    "$TINYCC_DEST/lib/tcc/include" || exit 1
+
+# tcc CLI (+ any cross-tcc binaries the build happened to produce)
+run_logged cp "$TINYCC_SRC/tcc" "$TINYCC_DEST/bin/" || exit 1
+for x in "$TINYCC_SRC"/*-tcc; do
+    [ -f "$x" ] && run_logged cp "$x" "$TINYCC_DEST/bin/"
+done
+
+# Public libtcc.h consumed by the package's C wrappers.
+run_logged cp "$TINYCC_SRC/libtcc.h" "$TINYCC_DEST/include/" || exit 1
+
+# Shared and static libtcc next to each other so PKG_LIBS can pick either.
+run_logged cp "$TINYCC_SRC/$SHLIB" "$TINYCC_DEST/lib/" || exit 1
+[ -f "$TINYCC_SRC/libtcc.a" ] && run_logged cp "$TINYCC_SRC/libtcc.a" "$TINYCC_DEST/lib/"
+
+# JIT runtime archive.
+run_logged cp "$TINYCC_SRC/libtcc1.a" "$TINYCC_DEST/lib/tcc/" || exit 1
+for x in "$TINYCC_SRC"/*-libtcc1.a; do
+    [ -f "$x" ] && run_logged cp "$x" "$TINYCC_DEST/lib/tcc/"
+done
+
+# Tinycc-shipped C headers (stdarg.h, stdbool.h, stddef.h, ...) — tinycc
+# resolves these as <tccdir>/include at JIT compile time.
+run_logged cp -R "$TINYCC_SRC/include/." "$TINYCC_DEST/lib/tcc/include/" || exit 1
+[ -f "$TINYCC_SRC/tcclib.h" ] && run_logged cp "$TINYCC_SRC/tcclib.h" "$TINYCC_DEST/lib/tcc/include/"
+
+# Sanity-check the artifacts the package will look for at build and run time.
+for f in \
+    "$TINYCC_DEST/bin/tcc" \
+    "$TINYCC_DEST/include/libtcc.h" \
+    "$TINYCC_DEST/lib/$SHLIB" \
+    "$TINYCC_DEST/lib/tcc/libtcc1.a" \
+    "$TINYCC_DEST/lib/tcc/include/stdbool.h"
+do
+    if [ ! -f "$f" ]; then
+        log "ERROR: required TinyCC artifact missing after install: $f"
+        exit 1
+    fi
+done
+
+if [ -x "$THISDIR/tools/run_tcc_minimal_test.sh" ]; then
+    log "Running minimal TCC JIT test"
+    (
+        cd "$THISDIR/tools" || exit 1
+        ./run_tcc_minimal_test.sh
+    ) >> "$CONFIG_LOG" 2>&1
+    TCC_MINIMAL_EXIT=$?
+    log "Minimal TCC JIT test exit code: $TCC_MINIMAL_EXIT"
+    if [ "$TCC_MINIMAL_EXIT" -ne 0 ]; then
+        log "ERROR: Minimal TCC JIT test failed"
+        exit 1
+    fi
+    rm -f "$THISDIR/tools/tcc_minimal_test" >> "$CONFIG_LOG" 2>&1 || true
+else
+    log "Minimal TCC JIT test script not found; skipping"
+fi
+
+log "TinyCC built and installed successfully"
