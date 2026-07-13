@@ -1,3 +1,9 @@
+# RsimdDispatch 0.1.2.9002
+
+* Publish the upstream development package from the Abiomix public monorepo so
+  native packages can resolve the current SIMD headers and dispatch templates
+  from the Abiomix R-universe.
+
 # RsimdDispatch 0.1.2.9001
 
 * Fix template generation: `.def` files (operations.def, signatures.def,

@@ -1,0 +1,8 @@
+Package: RsimdDispatch
+Repository: https://github.com/sounkou-bioinfo/RsimdDispatch
+Commit: 855851c6b68c89ed0d267891066359cec73208a6
+Imported: 2026-07-13
+Method: git subtree --squash
+Subdirectory: packages/RsimdDispatch
+Upstream-License: GPL (>= 2)
+Bundled-SIMDe-License: MIT

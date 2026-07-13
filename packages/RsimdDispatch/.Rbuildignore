@@ -31,3 +31,6 @@
 ^inst/templates/dispatch-c/tools/simdDispatch/build$
 ^inst/templates/dispatch-c/tools/simdDispatch/build/.*$
 ^AGENT\.md$
+^COMMERCIAL-LICENSE\.md$
+^UPSTREAM\.dcf$
+^UPSTREAM\.md$
