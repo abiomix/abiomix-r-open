@@ -165,3 +165,10 @@ transcripts preserved as lists (using a vendored parser); builds remain self-con
   - R warnings emitted when correcting non-conformant headers
 
 - bundles htslib/bcftools cli and libraries
+# RBCFTools 1.23-0.0.4.9000
+
+- Reduced the package to its native executable boundary: packaged `bcftools`,
+  `htslib` tools, plugins, paths, versions, environment setup, and structured
+  process execution.
+- Removed duplicate Arrow, Parquet, DuckDB, DuckLake, VEP, native R API, and
+  downstream linking surfaces. These capabilities belong in `Rduckhts`.
