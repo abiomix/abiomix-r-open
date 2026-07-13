@@ -1,102 +1,48 @@
 # Abiomix R Open
 
-`abiomix-r-open` is the public package monorepo for generally applicable R and
-native genomics infrastructure maintained by Abiomix.
+Public R packages and native genomics tools maintained by
+[Abiomix](https://github.com/abiomix).
 
-It is intentionally separate from the internal `abiomix-r` scientific/product
-monorepo. Code belongs here only when it is useful outside Abiomix products and
-can be developed, tested, licensed, and reviewed in public.
+## Packages
 
-## Initial Package Scope
+Packages live in `packages/<package>` and use standard R package layouts. The
+repository currently includes native-tool interfaces, SIMD and alignment
+infrastructure, storage and data-system integrations, and maintained patches to
+upstream scientific R packages.
 
-- QUILT2: explicit ploidy, incomplete-reference, allele-state, indel, and
-  multiallelic work.
-- STITCH: generally applicable defined-ploidy and reference-reader work.
-- httpuv: standards-compliant byte-range file serving.
-- RBCFTools: the `freeseek/score` liftover plugin and typed liftover entrypoint,
-  if those changes are not accepted directly upstream.
-- Native-tool packages for GLnexus, SHAPEIT5, GLIMPSE2, and T1K where an R
-  package can build and distribute the executable reliably.
+Browse published packages and build status at
+[abiomix.r-universe.dev](https://abiomix.r-universe.dev).
 
-No placeholder R packages are published. A package directory is added only
-with complete source, upstream/license metadata, tests, and a working build.
-
-## Package Contract
-
-Every directory under `packages/` is an independently installable R package
-with a normal `DESCRIPTION`, `NAMESPACE`, `R/`, `tests/`, and `inst/` layout.
-Packages that bundle native tools follow the RBCFTools pattern:
-
-1. pin and attribute the complete upstream source;
-2. build the executable and/or library during `R CMD INSTALL`;
-3. install tools below the package directory;
-4. expose version, capability, include/library, and executable-path functions;
-5. expose typed R runners with explicit argument vectors and structured results;
-6. run without downloading source or solving an environment at runtime;
-7. build as Ubuntu binaries through the Abiomix R-universe.
-
-The package boundary distributes a native tool. It must not invent a second
-scientific algorithm, hide upstream behavior, or combine unrelated executables
-into one oversized package.
-
-### Authorship and funding
-
-Every Abiomix-maintained package includes these entries in `Authors@R`:
+## Installation
 
 ```r
-person(
-  given = "Sounkou Mahamane",
-  family = "Toure",
-  email = "sounkoutoure@gmail.com",
-  role = c("aut", "cre")
-)
-person(
-  given = "Abiomix FZ LLC",
-  role = c("cph", "fnd")
-)
+options(repos = c(
+  abiomix = "https://abiomix.r-universe.dev",
+  CRAN = "https://cloud.r-project.org"
+))
+
+install.packages("Rminibwa")
 ```
 
-Use `cre` only where Sounkou Mahamane Toure is the package maintainer. Preserve
-all upstream authors, contributors, copyright holders, and funders. Abiomix FZ
-LLC's `cph` role covers Abiomix-owned contributions; it does not replace or
-claim ownership of bundled upstream code.
+R-universe also provides platform-specific binaries when available. See the
+installation instructions on each package page.
 
-## Upstream and Licensing
+## Development
 
-Each imported or patched package must contain:
+Build and check an individual package from the repository root:
 
-```text
-UPSTREAM.dcf     upstream URL, tag/commit, source hash, import date
-UPSTREAM.md      patch purpose, synchronization and upstreaming policy
-LICENSE*         exact package and bundled-source licenses/notices
-NEWS.md          user-visible Abiomix changes
-tests/upstream/  retained upstream tests where applicable
-tests/abiomix/   added behavior, conformance, and regression fixtures
+```sh
+R CMD build packages/<package>
+R CMD check <package>_<version>.tar.gz
 ```
 
-Repository-authored documentation, CI, templates, and tools are available under
-GPL-2.0-or-later. Public package releases use the GPL version declared in each
-package's `DESCRIPTION`. Abiomix FZ LLC can also offer a separate commercial
-license for Abiomix-owned code under a written agreement.
+Validate the monorepo structure with:
 
-The commercial option does not relicense third-party code. Bundled upstream
-components retain their own licenses, and a combined work that includes GPL
-code remains subject to the applicable GPL. See [`LICENSES.md`](LICENSES.md)
-and [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md).
-
-## Repositories
-
-- Public packages and patches: this repository.
-- Public binary registry:
-  [`abiomix/abiomix.r-universe.dev`](https://github.com/abiomix/abiomix.r-universe.dev).
-- Package installation endpoint: `https://abiomix.r-universe.dev`.
-- Internal scientific/product packages: private `abiomix-r` monorepo.
-
-## Repository Check
-
-```bash
+```sh
 bash tools/check-repository.sh
 ```
 
-Package-specific CI is added with each real package import. Repository checks
-do not substitute for `R CMD check`, native sanitizers, or scientific fixtures.
+## Licensing
+
+Each package carries its own license and upstream notices. See
+[`LICENSES.md`](LICENSES.md) for the repository-wide inventory.
