@@ -1,0 +1,172 @@
+Build notes
+===========
+
+
+## libuv
+
+The contents of the libuv/ directory are the canonical libuv sources, with changes as described below.
+
+### Step-by-step instructions
+
+To update libuv to a new version, do the following:
+
+* Edit `tools/update_libuv.R` so that `version` is the new version number, then add it to git.
+
+    ```
+    git add tools/update_libuv.R
+    ```
+
+* Run that script, then do a `git add src/libuv`.
+
+    ```
+    tools/update_libuv.R
+    git add src/libuv
+    ```
+
+* On Linux or Mac, run libuv's `autogen.sh`, and commit the files.
+
+    ```
+    cd src/libuv
+    ./autogen.sh
+    mv m4/lt~obsolete.m4 m4/lt_obsolete.m4
+
+    # Add these generated files. -f is needed because they are listed in src/libuv/.gitignore.
+    git add -f Makefile.in
+    git add -f aclocal.m4
+    git add -f ar-lib
+    git add -f compile
+    git add -f config.guess
+    git add -f config.sub
+    git add -f configure
+    git add -f depcomp
+    git add -f install-sh
+    git add -f ltmain.sh
+    git add -f m4/libtool.m4
+    git add -f m4/libuv-extra-automake-flags.m4
+    git add -f m4/lt_obsolete.m4
+    git add -f m4/ltoptions.m4
+    git add -f m4/ltsugar.m4
+    git add -f m4/ltversion.m4
+    git add -f missing
+
+    git commit -m "Update to libuv [VERSION]"
+    ```
+
+* Cherry-pick some fixes:
+
+    ```
+    # Fixes for unnamed structs on MinGW
+    git cherry-pick 7106577
+    git cherry-pick 4bea58e
+    # Fix for incompatible pointer type on MinGW
+    git cherry-pick ef944cf
+    # Fix for empty translation unit warning on Windows with -pedantic
+    git cherry-pick 8ab31ef
+    # Fix for Solaris
+    git cherry-pick 1898a29
+    # Workaround for pragma NOTE
+    git cherry-pick 421f092
+    # Avoid "ISO C90 forbids mixed declarations and code" warning
+    git cherry-pick 1431d4f
+    ```
+
+* If the cherry-picked commits needed any modification, update this README to refer to the new cherry-picked commits, then commit.
+
+* Check for any C files that have a "#pragma" with "diagnostic ignored". If any are found, replace `#pragma` with `# pragma` and add it to the set of commits to cherry-pick.
+
+    ```
+    find src/ -name "*.c" -exec grep -ri "#pragma.*diagnostic ignored" {} \;
+    ```
+
+### Details
+
+#### Makefile-libuv.mingw
+
+Prior to libuv 1.21.0, it included a Makefile.mingw, for use on MinGW platforms like the one that R uses in Windows. As of libuv 1.21.0, the Makefile.mingw was removed, and the recommended build method on MinGW is to use the configure script. However, the configure script will not run from  `R CMD INSTALL`, because it will try to execute the configure script using cmd.exe, and it will not even be able to find basic things like /bin/sh.
+
+Because it's not possible to run the configure script from `R CMD INSTALL`, httpuv includes a custom Makefile for libuv. The original version of this resides at tools/Makefile-libuv.mingw, and when the `tools/update_libuv.R` script is run, it copies it to src/libuv/Makefile-libuv.mingw.
+
+
+#### MinGW and unnamed structs
+
+The libuv sources contain unnamed structs, which result in warnings on MinGW's GCC. This in turn causes WARNINGS in R CMD check on Windows. They were converted to named structs.
+
+#### Empty translation unit
+
+When libuv/src/win/snprintf.c is compiled, the entire content of the file is `#ifdef`-ed out, so the result is empty. When compiled with the `-pedantic` flag, as is done on CRAN's win-builder service (and probably the CRAN build machine), this results in a significant warning.
+
+The workaround just adds a dummy `typedef` statement to suppress the warning.
+
+#### Solaris support
+
+The Makefile.am file is modified for Solaris support. This is the original line:
+
+```
+libuv_la_CFLAGS += -D__EXTENSIONS__ -D_XOPEN_SOURCE=500
+```
+
+It has `-DSUNOS_NO_IFADDRS` added to it. See [here](https://github.com/libuv/libuv/issues/1458) for more information.
+
+```
+libuv_la_CFLAGS += -D__EXTENSIONS__ -D_XOPEN_SOURCE=500 -DSUNOS_NO_IFADDRS
+```
+
+#### C-style comments
+
+In src/libuv/include/uv.h, the original file has some C++-style comments, but this raises a significant warning for `R CMD check` on r-devel-linux-x86_64-debian-gcc (as of 2020-05-15). The fix is to replace with C-style comments.
+
+
+#### Avoid `ISO C90 forbids mixed declarations and code` warning
+
+On CRAN's R-devel Debian machines (as of 2022-09-07), we saw the following significant warning:
+
+```
+* checking whether package ‘httpuv’ can be installed ... [88s/88s] WARNING
+Found the following significant warnings:
+  ./src/uv-common.h:61:3: warning: ISO C90 forbids mixed declarations and code [-Wdeclaration-after-statement]
+```
+
+We think that the `-Wdeclaration-after-statement` compiler flag is set on this system, but when compiling libuv, it results in a warning. There is a [libuv issue](https://github.com/libuv/libuv/issues/3131) about this, but it hasn't yet been fixed.
+
+This fix modifies src/libuv/configure.ac by adding the following line:
+
+```
+CC_CHECK_CFLAGS_APPEND([-Wno-declaration-after-statement])
+```
+
+
+#### Run `autogen.sh`
+
+After modifying Makefile.am or configure.ac, run `./autogen.sh`. This requires automake and libtool, and generates the `configure` script, along with a number of other related files. These generated files are checked into the repository so that other systems do not need automake and libtool to build libuv.
+
+The file `libuv/m4/lt~obsolete.m4` (generated by autogen.sh) is renamed to `lt_obsolete.m4` because the filename with the `~` causes problems with `R CMD check`. In the Makevars file, it gets copied to `lt~obsolete.m4` so that it's present during the build process.
+
+#### `AM_MAINTAINER_MODE`
+
+The `configure.ac` includes `AM_MAINTAINER_MODE`, which wraps all autotools regeneration rules in the generated `Makefile.in` behind a `@MAINTAINER_MODE_TRUE@` conditional. Since `--enable-maintainer-mode` is not passed to `./configure` at build time, these rules are disabled and `make` never attempts to re-run automake, autoconf, or aclocal — regardless of file timestamps or what autotools versions are installed on the build machine.
+
+This is the standard approach used by projects that ship pre-generated autotools output (e.g. curl, libffi, libexpat). See [#280](https://github.com/rstudio/httpuv/issues/280), [#319](https://github.com/rstudio/httpuv/pull/319), and [#429](https://github.com/rstudio/httpuv/issues/429) for history.
+
+As an additional safeguard, `Makevars.in` also touches autotools input and output files to ensure `mtime(inputs) <= mtime(outputs)`, preventing regeneration even if `AM_MAINTAINER_MODE` were somehow bypassed.
+
+The following generated files are checked into the repository:
+
+```
+src/libuv/Makefile.in
+src/libuv/aclocal.m4
+src/libuv/ar-lib
+src/libuv/compile
+src/libuv/config.guess
+src/libuv/config.sub
+src/libuv/configure
+src/libuv/depcomp
+src/libuv/install-sh
+src/libuv/ltmain.sh
+src/libuv/m4/libtool.m4
+src/libuv/m4/libuv-extra-automake-flags.m4
+src/libuv/m4/lt_obsolete.m4    * NOTE: this was renamed
+src/libuv/m4/ltoptions.m4
+src/libuv/m4/ltsugar.m4
+src/libuv/m4/ltversion.m4
+src/libuv/missing
+```

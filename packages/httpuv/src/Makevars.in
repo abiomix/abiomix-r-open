@@ -1,0 +1,76 @@
+UNAME := $(shell uname)
+
+PKG_LIBS = @libs@ ./http-parser/http_parser.o ./sha1/sha1.o ./base64/base64.o -pthread
+
+ifeq ($(UNAME), Darwin)
+PKG_LIBS += -lz -framework CoreServices
+endif
+
+ifeq ($(UNAME), SunOS)
+PKG_LIBS += -lkstat -lsendfile -lsocket -lxnet
+endif
+ifeq ($(UNAME), FreeBSD)
+PKG_LIBS += -lkvm
+endif
+ifeq ($(UNAME), OpenBSD)
+PKG_LIBS += -lkvm
+endif
+
+PKG_CFLAGS = $(C_VISIBILITY) -DSTRICT_R_HEADERS
+PKG_CXXFLAGS = $(CXX_VISIBILITY) -DSTRICT_R_HEADERS
+PKG_CPPFLAGS = @cflags@ -pthread
+
+# To avoid spurious warnings from `R CMD check --as-cran`, about compiler
+# warning flags like -Werror.
+CONFIGURE_FLAGS="--quiet"
+
+#### Debugging flags ####
+# Uncomment to enable thread assertions
+# PKG_CPPFLAGS += -DDEBUG_THREAD -UNDEBUG
+
+#### Other flags ####
+# Uncomment to suppress lots of warnings on Fedora 28
+# PKG_CPPFLAGS += -Wno-deprecated-declarations -Wno-parentheses
+# Fedora 28 defines _GLIBCXX_ASSERTIONS, so we better define it everywhere
+# to catch issues earlier.
+# jcheng 2018-06-18: Disabling _GLIBCXX_ASSERTIONS for now, as it causes
+#   CRAN to flag the package as using abort and printf.
+# PKG_CPPFLAGS += -D_GLIBCXX_ASSERTIONS
+
+
+$(SHLIB): @deps@ http-parser/http_parser.o sha1/sha1.o base64/base64.o
+
+# We needed to rename lt~obsolete.m4 because the name causes problems with R
+# CMD check. Here we rename it back.
+libuv/m4/lt~obsolete.m4: libuv/m4/lt_obsolete.m4
+	cp -p -f libuv/m4/lt_obsolete.m4 libuv/m4/lt~obsolete.m4
+
+# Run ./configure to create the Makefile.
+#
+# The bundled libuv ships pre-generated autotools output files (configure,
+# Makefile.in, aclocal.m4), so we do NOT need to run autogen.sh or automake.
+#
+# To prevent make from trying to regenerate these files, libuv's configure.ac
+# uses AM_MAINTAINER_MODE, which wraps all regeneration rules behind a
+# conditional that is disabled by default (see #280, #319, #429).
+#
+# As belt-and-suspenders, we also touch autotools files so that
+# mtime(inputs) <= mtime(outputs), preventing regeneration rules from firing
+# even if AM_MAINTAINER_MODE were somehow bypassed.
+#
+# We also need to make sure configure is executable, because on some platforms,
+# calling unzip() in R does not preserve the executable bit.
+libuv/Makefile: libuv/m4/lt~obsolete.m4
+	cd libuv; \
+	touch aclocal.m4 configure.ac Makefile.am m4/*.m4; \
+	touch -r aclocal.m4 configure Makefile.in; \
+	chmod +x configure; \
+	CC="$(CC)" CFLAGS="$(CFLAGS) $(CPICFLAGS) $(C_VISIBILITY) -DNDEBUG" CPPFLAGS="$(CPPFLAGS)" AR="$(AR)" RANLIB="$(RANLIB)" LDFLAGS="$(LDFLAGS)" ./configure lt_cv_apple_cc_single_mod=no $(CONFIGURE_FLAGS)
+
+libuv/.libs/libuv.b: libuv/Makefile
+	$(MAKE) --directory=libuv \
+		HAVE_DTRACE=0
+	@mv libuv/.libs/libuv.a libuv/.libs/libuv.b
+
+clean:
+	$(MAKE) --directory=libuv distclean
