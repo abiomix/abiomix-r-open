@@ -1,0 +1,162 @@
+---
+title: "Native C API"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Native C API}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+Ropendal exposes a pure C API in `inst/include/ropendal.h` for downstream native
+packages. The purpose is direct OpenDAL-backed byte I/O from native code: submit
+async work, wait on Aio handles, and read borrowed results or fill caller-owned
+buffers without calling R while background I/O is running. The exported C symbols
+are implemented in Rust and documented by the installed header.
+
+## Async-first surface
+
+C calls mirror the package’s async behavior:
+
+- `*_aio()` for submission,
+- `ropendal_aio_wait()` / monitor helpers for completion,
+- explicit status codes plus optional error objects for operation errors.
+
+Submission callbacks, when supplied in option structs, receive a borrowed pointer
+to the completed `ropendal_aio_t`. Registering a callback retains the Aio until
+callback delivery, so callback userdata must remain valid until the callback has
+run. They may run on worker threads; treat them as notifications only and do not
+call R's C API from them.
+
+## Usage from another R package
+
+A downstream package uses the normal R package mechanism to get the header:
+
+```text
+LinkingTo: Ropendal
+Imports: Ropendal
+```
+
+Native code can then include the installed header:
+
+```c
+#include <ropendal.h>
+```
+
+If the downstream shared library calls Ropendal symbols directly, its build
+system must also arrange for Ropendal's native library to be loaded/linked before
+those calls. The C interface itself remains pure C and does not require R headers
+or `SEXP` values.
+
+## Minimal usage pattern
+
+```c
+// allocate a filesystem handle
+ropendal_fs_t *fs = NULL;
+ropendal_error_t *err = NULL;
+ropendal_kv_t cfg = {
+  .struct_size = sizeof(cfg),
+  .key = "root",
+  .value = "/tmp/ropendal-example"
+};
+ropendal_fs_open("fs", &cfg, 1, &fs, &err);
+
+// submit async read and wait
+ropendal_read_options_t opts = {
+  .struct_size = sizeof(opts),
+  .path = "object.bin"
+};
+
+ropendal_aio_t *aio = NULL;
+ropendal_status_t status = ropendal_read_aio(fs, &opts, &aio, &err);
+if (status == ROPENDAL_OK) {
+  ropendal_aio_wait(aio, -1, &err);
+  const uint8_t *data = NULL;
+  size_t len = 0;
+  ropendal_aio_result_bytes(aio, &data, &len, &err);
+}
+
+// always release native resources
+ropendal_aio_release(aio);
+ropendal_fs_release(fs);
+ropendal_error_release(err);
+```
+
+## Prefix-scoped byte stores
+
+Downstream native packages that work with chunk keys can open a byte-store view
+instead of rebuilding prefixes manually:
+
+```c
+ropendal_store_options_t store_opts = {
+  .struct_size = sizeof(store_opts),
+  .prefix = "array.zarr"
+};
+ropendal_store_t *store = NULL;
+ropendal_store_open(fs, &store_opts, &store, &err);
+
+uint8_t dst[4096];
+ropendal_store_read_options_t read_opts = {
+  .struct_size = sizeof(read_opts),
+  .key = "c/0/0",
+  .has_offset = 1,
+  .offset = 0,
+  .has_size = 1,
+  .size = sizeof(dst)
+};
+ropendal_store_read_into_aio(store, &read_opts, dst, sizeof(dst), &aio, &err);
+ropendal_aio_wait(aio, -1, &err);
+
+ropendal_aio_release(aio);
+ropendal_store_release(store);
+```
+
+Store operations are still async-first and byte-only. They do not know about
+Zarr, VCF, serializers, codecs, or R objects.
+
+For repeated chunk reads, native code can opt into a full-object cache adapter by
+supplying a second store as the cache namespace:
+
+```c
+ropendal_store_t *cache = NULL;
+ropendal_store_t *cached = NULL;
+ropendal_store_options_t cache_opts = {
+  .struct_size = sizeof(cache_opts),
+  .prefix = "cache/array.zarr"
+};
+ropendal_store_open(fs, &cache_opts, &cache, &err);
+
+ropendal_store_cache_options_t cache_policy = {
+  .struct_size = sizeof(cache_policy),
+  .validate = ROPENDAL_STORE_CACHE_VALIDATE_LAST_MODIFIED_SIZE
+};
+ropendal_store_cache_open(store, cache, &cache_policy, &cached, &err);
+```
+
+Partial reads bypass this first full-object cache layer; it is intended for
+chunk-key layouts where each key is already a reasonable cache unit.
+
+Native code that needs range-aware caching can opt into fixed-size block caching
+instead:
+
+```c
+ropendal_store_block_cache_options_t block_policy = {
+  .struct_size = sizeof(block_policy),
+  .block_size = 8 * 1024 * 1024,
+  .validate = ROPENDAL_STORE_CACHE_VALIDATE_LAST_MODIFIED_SIZE
+};
+ropendal_store_t *block_cached = NULL;
+ropendal_store_block_cache_open(store, cache, &block_policy, &block_cached, &err);
+```
+
+The block cache is still explicit and byte-only: callers provide the cache store,
+choose the block size, and keep format semantics above the store layer.
+
+## Why this exists
+
+Downstream packages can perform byte-oriented async operations without going through
+R-level raw allocation. This keeps the native path fast and explicit while using
+the same transport semantics as the user-facing R API.

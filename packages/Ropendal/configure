@@ -1,0 +1,134 @@
+if [ -d "${HOME}/.cargo/bin" ]; then
+  export PATH="${PATH}:${HOME}/.cargo/bin"
+fi
+
+WASM_TARGET=""
+case " $* " in
+  *"--host=wasm32-unknown-emscripten"*) WASM_TARGET="true" ;;
+esac
+if [ "$(uname)" = "Emscripten" ]; then
+  WASM_TARGET="true"
+fi
+if ${CC:-cc} --version 2>/dev/null | grep -qi emscripten; then
+  WASM_TARGET="true"
+fi
+if [ "${WASM_TARGET}" = "true" ]; then
+  TARGET="wasm32-unknown-emscripten"
+fi
+
+if [ "${WASM_TARGET}" = "true" ]; then
+  CARGO_VERSION="$(cargo --version 2>/dev/null || printf 'not used for wasm shim')"
+  RUSTC_VERSION="$(rustc --version 2>/dev/null || printf 'not used for wasm shim')"
+else
+  CARGO_VERSION="$(cargo --version)"
+
+  if [ $? -ne 0 ]; then
+    echo "-------------- ERROR: CONFIGURATION FAILED --------------------"
+    echo ""
+    echo "The cargo command is not available. To install Rust, please refer"
+    echo "to the official instruction:"
+    echo ""
+    echo "https://www.rust-lang.org/tools/install"
+    echo ""
+    echo "---------------------------------------------------------------"
+
+    exit 1
+  fi
+
+  RUSTC_VERSION="$(rustc --version || true)"
+fi
+
+echo "using Rust package manager: '${CARGO_VERSION}'"
+echo "using Rust compiler: '${RUSTC_VERSION}'"
+
+append_feature() {
+  if [ -z "${CONFIGURE_FEATURES}" ]; then
+    CONFIGURE_FEATURES="$1"
+  else
+    CONFIGURE_FEATURES="${CONFIGURE_FEATURES} $1"
+  fi
+}
+
+CONFIGURE_FEATURES=""
+NO_DEFAULT_FEATURES=""
+
+for arg in "$@"; do
+  case "${arg}" in
+    --with-rust-features=*)
+      value="${arg#*=}"
+      value="$(printf '%s' "${value}" | tr ',' ' ')"
+      append_feature "${value}"
+      ;;
+    --without-default-rust-features)
+      NO_DEFAULT_FEATURES="--no-default-features"
+      ;;
+    --enable-fs)
+      append_feature "fs"
+      ;;
+    --enable-http)
+      append_feature "http"
+      ;;
+    --enable-s3)
+      append_feature "s3"
+      ;;
+    --enable-gcs)
+      append_feature "gcs"
+      ;;
+    --enable-azblob)
+      append_feature "azblob"
+      ;;
+    --enable-gdrive)
+      append_feature "gdrive"
+      ;;
+    --enable-cloud)
+      append_feature "cloud"
+      ;;
+    --help)
+      echo "Ropendal configure options:"
+      echo "  --with-rust-features=FEATURES   comma/space separated Cargo features"
+      echo "  --without-default-rust-features pass Cargo --no-default-features"
+      echo "  --enable-fs                     enable local filesystem service"
+      echo "  --enable-http                   enable HTTP service"
+      echo "  --enable-s3                     enable S3-compatible service"
+      echo "  --enable-gcs                    enable Google Cloud Storage service"
+      echo "  --enable-azblob                 enable Azure Blob service"
+      echo "  --enable-gdrive                 enable Google Drive service"
+      echo "  --enable-cloud                  enable S3, GCS, Azure Blob, and Google Drive"
+      exit 0
+      ;;
+  esac
+done
+
+if [ -n "${SAVVY_PROFILE}" ]; then
+  PROFILE="${SAVVY_PROFILE}"
+elif [ "${DEBUG}" = "true" ]; then
+  PROFILE=dev
+else
+  PROFILE=release
+fi
+
+if [ "${WASM_TARGET}" = "true" ] && [ -z "${SAVVY_FEATURES}" ] && [ -z "${CONFIGURE_FEATURES}" ] && [ -z "${NO_DEFAULT_FEATURES}" ]; then
+  echo "using wasm/webR feature set: fs only"
+  NO_DEFAULT_FEATURES="--no-default-features"
+  append_feature "fs"
+fi
+
+FEATURES="$(printf '%s %s' "${SAVVY_FEATURES}" "${CONFIGURE_FEATURES}" | xargs)"
+if [ -n "${FEATURES}" ]; then
+  FEATURE_FLAGS="${NO_DEFAULT_FEATURES} --features '${FEATURES}'"
+elif [ -n "${NO_DEFAULT_FEATURES}" ]; then
+  FEATURE_FLAGS="${NO_DEFAULT_FEATURES}"
+fi
+
+if [ "$(uname)" = "Darwin" ]; then
+  MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
+  echo "using macOS deployment target: ${MACOSX_DEPLOYMENT_TARGET}"
+  BEFORE_CARGO_BUILD="${BEFORE_CARGO_BUILD}"' export MACOSX_DEPLOYMENT_TARGET="'"${MACOSX_DEPLOYMENT_TARGET}"'" \&\&'
+fi
+
+sed \
+  -e "s/@TARGET@/${TARGET}/" \
+  -e "s/@PROFILE@/${PROFILE}/" \
+  -e "s/@FEATURE_FLAGS@/${FEATURE_FLAGS}/" \
+  -e "s|@BEFORE_CARGO_BUILD@|${BEFORE_CARGO_BUILD}|" \
+  src/Makevars.in > src/Makevars
