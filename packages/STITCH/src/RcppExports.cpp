@@ -969,6 +969,29 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_bgzf_compress
+void cpp_bgzf_compress(const std::string& input_path, const std::string& output_path, const int n_threads);
+RcppExport SEXP _STITCH_cpp_bgzf_compress(SEXP input_pathSEXP, SEXP output_pathSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const std::string& >::type input_path(input_pathSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type output_path(output_pathSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    cpp_bgzf_compress(input_path, output_path, n_threads);
+    return R_NilValue;
+END_RCPP
+}
+// cpp_index_vcf
+void cpp_index_vcf(const std::string& vcf_path, const int n_threads);
+RcppExport SEXP _STITCH_cpp_index_vcf(SEXP vcf_pathSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const std::string& >::type vcf_path(vcf_pathSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    cpp_index_vcf(vcf_path, n_threads);
+    return R_NilValue;
+END_RCPP
+}
 // rcpp_make_column_of_vcf
 Rcpp::StringVector rcpp_make_column_of_vcf(const arma::mat& gp_t, const bool use_read_proportions, const bool use_state_probabilities, const bool add_x_2_cols, const arma::mat& read_proportions, const arma::mat& q_t, const arma::mat& x_t);
 RcppExport SEXP _STITCH_rcpp_make_column_of_vcf(SEXP gp_tSEXP, SEXP use_read_proportionsSEXP, SEXP use_state_probabilitiesSEXP, SEXP add_x_2_colsSEXP, SEXP read_proportionsSEXP, SEXP q_tSEXP, SEXP x_tSEXP) {
@@ -1042,6 +1065,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_STITCH_rcpp_make_alphaMatSumX_tc", (DL_FUNC) &_STITCH_rcpp_make_alphaMatSumX_tc, 3},
     {"_STITCH_rcpp_finalize_alphaMatSum_tc", (DL_FUNC) &_STITCH_rcpp_finalize_alphaMatSum_tc, 3},
     {"_STITCH_test_eHaps_options", (DL_FUNC) &_STITCH_test_eHaps_options, 8},
+    {"_STITCH_cpp_bgzf_compress", (DL_FUNC) &_STITCH_cpp_bgzf_compress, 3},
+    {"_STITCH_cpp_index_vcf", (DL_FUNC) &_STITCH_cpp_index_vcf, 2},
     {"_STITCH_rcpp_make_column_of_vcf", (DL_FUNC) &_STITCH_rcpp_make_column_of_vcf, 7},
     {NULL, NULL, 0}
 };

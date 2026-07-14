@@ -1,3 +1,30 @@
+quilt_map_Z_to_all_symbols <- function(Z, all_symbols) {
+    Z1 <- Z
+    Z1[] <- 0L
+    for (i in seq_along(Z)) {
+        symbols <- all_symbols[[i]]
+        Z1[[i]] <- match(Z[[i]], symbols[, "symbol"])
+        if (is.na(Z1[[i]])) {
+            endpoints_match <- symbols[1L, 1L] == symbols[nrow(symbols), 1L]
+            if (is.na(endpoints_match)) {
+                endpoints_match <- is.na(symbols[1L, 1L]) &&
+                    is.na(symbols[nrow(symbols), 1L])
+            }
+            if (endpoints_match) {
+                Z1[[i]] <- 0L
+            } else {
+                distance <- STITCH::calc_dist_between_rhb_t_and_hap(
+                    matrix(symbols[, 1L], ncol = 1L),
+                    STITCH::rcpp_int_expand(Z[[i]], 32L),
+                    32L
+                )
+                Z1[[i]] <- which(distance == min(distance))[[1L]]
+            }
+        }
+    }
+    as.integer(Z1)
+}
+
 build_mspbwt_indices <- function(
    hapMatcher,
    hapMatcherR,
@@ -103,7 +130,7 @@ select_new_haps_mspbwt <- function(
     a <- lapply(1:2, function(ihap) {
         hap <- round(hapProbs_t[ihap, ])
         Zs <- rcpp_int_contract(hap)
-        Zg <- mspbwt::map_Z_to_all_symbols(Zs, all_symbols)
+        Zg <- quilt_map_Z_to_all_symbols(Zs, all_symbols)
         mtm <- mspbwt::Rcpp_ms_MatchZ_Algorithm5(
             X = hapMatcher,
             ms_indices = ms_indices,
@@ -155,7 +182,7 @@ select_new_haps_mspbwt_v2 <- function(
         Zs <- rcpp_int_contract(hap)
         mtms <- lapply(1:nIndices, function(iIndex) {
             which_grids <- seq(iIndex, nGrids, nIndices)
-            Z_local <- mspbwt::map_Z_to_all_symbols(Zs[which_grids], ms_indices[[iIndex]][["all_symbols"]])
+            Z_local <- quilt_map_Z_to_all_symbols(Zs[which_grids], ms_indices[[iIndex]][["all_symbols"]])
             mtm <- mspbwt::Rcpp_ms_MatchZ_Algorithm5(
                 X = hapMatcher,
                 XR = hapMatcherR,
@@ -281,7 +308,7 @@ select_new_haps_mspbwt_v3 <- function(
             
             ## print_message(paste0("ihap = ", ihap, ", iIndex = ", iIndex))
             which_grids <- seq(iIndex, nGrids, nIndices)
-            Z_local <- mspbwt::map_Z_to_all_symbols(Zs[which_grids], ms_indices[[iIndex]][["all_symbols"]])
+            Z_local <- quilt_map_Z_to_all_symbols(Zs[which_grids], ms_indices[[iIndex]][["all_symbols"]])
             if (use_hapMatcherR) {
                 X <- matrix(0, 1, 1)
                 XR <- hapMatcherR
@@ -712,4 +739,3 @@ impute_using_split_reads_and_small_ref_panel <- function(
     )
     return(to_return)
 }
-

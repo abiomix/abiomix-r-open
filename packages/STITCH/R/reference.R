@@ -634,7 +634,7 @@ single_reference_iteration <- function(
         bound_eMatGrid_t <- TRUE
     }
     
-    out2 <- mclapply(
+    out2 <- parallel::mclapply(
         sampleRanges,
         mc.cores = nCores,
         FUN = new_subset_of_single_reference_iteration,

@@ -26,10 +26,13 @@ make_face_vcf_with_sites_list <- function(outputdir, regionName, output_sites_fi
         "0/0"
     )
     write.table(to_out, file = gsub(".gz", "", output_sites_filename), append = TRUE, col.names = FALSE, row.names = FALSE, sep = "\t", quote = FALSE)
-    check_program_dependency("bgzip")
-    check_program_dependency("tabix")
-    system(paste0("bgzip -f ", gsub(".gz", "", output_sites_filename)))
-    system(paste0("tabix -f ", output_sites_filename))
+    STITCH::bgzip_file(
+        input = gsub(".gz", "", output_sites_filename),
+        output = output_sites_filename,
+        overwrite = TRUE,
+        remove_input = TRUE
+    )
+    STITCH::index_vcf(output_sites_filename, overwrite = TRUE)
     print_message("Done making VCF with sites list")
     NULL
 }

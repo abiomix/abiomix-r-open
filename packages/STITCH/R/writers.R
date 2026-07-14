@@ -1,4 +1,22 @@
 ## the function called by STITCH
+require_rrbgen_for_bgen <- function() {
+    if (!requireNamespace("rrbgen", quietly = TRUE)) {
+        stop(
+            "output_format='bgen' requires the optional rrbgen package; ",
+            "install rrbgen or use output_format='bgvcf'",
+            call. = FALSE
+        )
+    }
+    if (utils::packageVersion("rrbgen") < "0.0.4") {
+        stop(
+            "output_format='bgen' requires rrbgen >= 0.0.4; ",
+            "update rrbgen or use output_format='bgvcf'",
+            call. = FALSE
+        )
+    }
+    invisible(NULL)
+}
+
 make_and_write_output_file <- function(
     output_filename,
     outputdir,
@@ -39,6 +57,9 @@ make_and_write_output_file <- function(
 
     
     print_message("Begin making and writing output file")
+    if (output_format == "bgen") {
+        require_rrbgen_for_bgen()
+    }
     to_use_output_filename <- get_output_filename(
         output_filename = output_filename,
         outputdir = outputdir,
@@ -140,7 +161,7 @@ make_and_write_output_file <- function(
         }
         
         ##
-        out <- mclapply(
+        out <- parallel::mclapply(
             sampleRanges,
             mc.cores = nCores,
             B_bit_prob = B_bit_prob,
@@ -303,8 +324,13 @@ make_and_write_output_file <- function(
     ## 
     if (output_format == "bgvcf") {
         print_message("bgzip output file and move to final location")
-        system(paste0("bgzip --threads ", nCores, " -f ", shQuote(output_unbgzipped)))
-        system(paste0("mv ", shQuote(paste0(output_unbgzipped, ".gz")), " ", shQuote(to_use_output_filename)))
+        bgzip_file(
+            input = output_unbgzipped,
+            output = to_use_output_filename,
+            threads = nCores,
+            overwrite = TRUE,
+            remove_input = TRUE
+        )
     } else {
         close(bgen_file_connection)
         print_message("Write out variant statistics to accompany bgen file")
@@ -749,7 +775,7 @@ outputInputInVCFFunction <- function(
     ## loop over samples - write to disk!
     ##
     print_message("Prepare data to use to build vcf from input")
-    out2 <- mclapply(
+    out2 <- parallel::mclapply(
         x3,
         mc.cores = nCores,
         FUN = f,
@@ -1187,7 +1213,7 @@ determine_reads_in_output_blocks <- function(
     blocks_in_vector_form <- get_blocks_in_vector_form(blocks_for_output, nGrids) 
     ##
     sampleRanges <- getSampleRange(N = N, nCores = nCores)    
-    out <- mclapply(
+    out <- parallel::mclapply(
         sampleRanges,
         mc.cores = nCores,
         tempdir = tempdir,

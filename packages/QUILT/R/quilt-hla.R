@@ -224,7 +224,7 @@ QUILT_HLA <- function(
     ## run many samples through
     ##
     bamfiles <- scan(bamlist, what = "char", quiet = TRUE)
-    all_results <- mclapply(
+    all_results <- parallel::mclapply(
         1:length(bamfiles),
         mc.cores = nCores,
         FUN = quilt_hla_one_sample,

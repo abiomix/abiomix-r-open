@@ -222,7 +222,7 @@ make_and_save_hla_all_alleles_kmers <- function(
     print_message("Begin making HLA all alleles kmers file")
     ## code to make HLAallalleleskmers.out
 
-    out <- mclapply(
+    out <- parallel::mclapply(
         1:length(ourfiles),
         FUN = get_kmers_from_one_file,
         ourfiles = ourfiles,
@@ -752,7 +752,7 @@ make_and_save_hla_files_for_imputation <- function(
     ## code to make hla*snpformatalleles.out
     print_message("Begin making HLA snp format alleles file")
 
-    out <- mclapply(1:length(hla_regions_to_prepare), mc.cores = nCores, function(i_region){
+    out <- parallel::mclapply(1:length(hla_regions_to_prepare), mc.cores = nCores, function(i_region){
 
         hla_region <- hla_regions_to_prepare[i_region]
 

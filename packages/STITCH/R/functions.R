@@ -217,11 +217,6 @@ STITCH <- function(
     ##
     ## external dependency checks
     ##
-    check_program_dependency("rsync")
-    check_program_dependency("bgzip")
-
-
-
     ##
     ##
     ## validate parameters
@@ -1528,7 +1523,7 @@ downsample_the_samples <- function(
     }
 
 
-    out2 <- mclapply(sampleRanges, mc.cores=nCores,FUN=f, keepL= keepL, tempdir = tempdir, regionName = regionName, bundling_info = bundling_info, new_bundling_info = new_bundling_info)
+    out2 <- parallel::mclapply(sampleRanges, mc.cores=nCores,FUN=f, keepL= keepL, tempdir = tempdir, regionName = regionName, bundling_info = bundling_info, new_bundling_info = new_bundling_info)
     check_mclapply_OK(out2, "There has been an error downsampling the samples. Please see error message above")
 
     ## continuation of hack from above
@@ -1686,7 +1681,7 @@ generate_input <- function(
         chrLength <- get_chromosome_length(iBam = 1, bam_files, cram_files, chr)
     }
     sampleRanges <- getSampleRange(N = N, nCores = nCores)
-    out <- mclapply(1:length(sampleRanges), mc.cores=nCores, FUN=loadBamAndConvert_across_a_range,sampleRanges = sampleRanges,bundling_info=bundling_info,L=L,pos=pos, nSNPs = nSNPs,bam_files = bam_files,cram_files = cram_files,reference=reference,iSizeUpperLimit=iSizeUpperLimit,bqFilter=bqFilter,chr=chr,N=N,downsampleToCov=downsampleToCov,sampleNames=sampleNames,inputdir=inputdir,useSoftClippedBases=useSoftClippedBases, regionName = regionName, tempdir = tempdir, chrStart = chrStart, chrEnd = chrEnd, chrLength = chrLength, save_sampleReadsInfo = save_sampleReadsInfo, use_bx_tag = use_bx_tag, bxTagUpperLimit = bxTagUpperLimit)
+    out <- parallel::mclapply(1:length(sampleRanges), mc.cores=nCores, FUN=loadBamAndConvert_across_a_range,sampleRanges = sampleRanges,bundling_info=bundling_info,L=L,pos=pos, nSNPs = nSNPs,bam_files = bam_files,cram_files = cram_files,reference=reference,iSizeUpperLimit=iSizeUpperLimit,bqFilter=bqFilter,chr=chr,N=N,downsampleToCov=downsampleToCov,sampleNames=sampleNames,inputdir=inputdir,useSoftClippedBases=useSoftClippedBases, regionName = regionName, tempdir = tempdir, chrStart = chrStart, chrEnd = chrEnd, chrLength = chrLength, save_sampleReadsInfo = save_sampleReadsInfo, use_bx_tag = use_bx_tag, bxTagUpperLimit = bxTagUpperLimit)
     check_mclapply_OK("There has been an error generating the input. Please see error message above")
     print_message("Done generating inputs")
     return(NULL)
@@ -1783,11 +1778,6 @@ convert_sam_header_rg_tags_to_sample_name <- function(header, file) {
     return(sm[1])
 }
 
-get_sample_name_from_bam_file_using_external_samtools <- function(file) {
-    header <- system(paste0("samtools view -H ", file, " | grep ^@RG"), intern = TRUE)
-    return(convert_sam_header_rg_tags_to_sample_name(header = header, file = file))
-}
-
 get_sample_name_from_bam_file_using_SeqLib <- function(file) {
     header <- get_RG_lines_from_SeqLib(file)
     return(convert_sam_header_rg_tags_to_sample_name(header = header, file = file))
@@ -1811,7 +1801,7 @@ get_sample_names_from_bam_or_cram_files <- function(
         if (file.exists(file) == FALSE)
             stop(paste0("Cannot find ", file_type, " file:", file))
 
-    sampleNames <- mclapply(
+    sampleNames <- parallel::mclapply(
         files,
         mc.cores = nCores,
         get_sample_name_from_bam_file_using_SeqLib
@@ -2098,6 +2088,33 @@ return(sampleReads)
 }
 
 
+#' Read a contig length from a BAM or CRAM header
+#'
+#' @param file Path to a BAM or CRAM file.
+#' @param contig Contig name as recorded in the `SN` header tag.
+#'
+#' @return The contig length as an integer.
+#' @export
+get_alignment_contig_length <- function(file, contig) {
+    header <- strsplit(get_header_using_SeqLib(file), "\n", fixed = TRUE)[[1L]]
+    header <- header[startsWith(header, "@SQ\t")]
+    seq_spots <- strsplit(header, "\t", fixed = TRUE)
+    if (length(seq_spots) == 0L) {
+        stop("There is no @SQ tag in file: ", file, call. = FALSE)
+    }
+    seq <- t(vapply(seq_spots, function(fields) {
+        name <- sub("^SN:", "", fields[startsWith(fields, "SN:")][[1L]])
+        length <- sub("^LN:", "", fields[startsWith(fields, "LN:")][[1L]])
+        c(name, length)
+    }, character(2L)))
+    seq <- seq[seq[, 1L] == contig, , drop = FALSE]
+    if (nrow(seq) == 0L) {
+        stop("Could not find contig ", contig, " in header for file: ", file,
+             call. = FALSE)
+    }
+    as.integer(seq[1L, 2L])
+}
+
 ## necessary to load chromosome in chunks
 ## assume the same length for all samples
 get_chromosome_length <- function(iBam, bam_files, cram_files, chr) {
@@ -2106,20 +2123,7 @@ get_chromosome_length <- function(iBam, bam_files, cram_files, chr) {
     } else if (length(cram_files) > 0) {
         file <- cram_files[iBam]
     }
-    header <- system(paste0("samtools view -H ", file, " | grep ^@SQ"), intern = TRUE)
-    seq_spots <- lapply(header, strsplit, split = "\t")
-    if (length(seq_spots) == 0)
-        stop(paste0("There is no @SQ tag (with sample name) for:", file))
-    seq <- t(sapply(seq_spots, function(x) {
-        y <- x[[1]]
-        chrName <- substr(y[substr(y, 1, 3) == "SN:"], 4, 1000)
-        chrLength <- substr(y[substr(y, 1, 3) == "LN:"], 4, 1000)
-        return(c(chrName, chrLength))
-    }))
-    seq <- seq[seq[, 1] == chr, , drop = FALSE]
-    if (nrow(seq) == 0)
-        stop(paste0("Could not find chromosome length for file:", file))
-    return(seq[1, 2])
+    get_alignment_contig_length(file, chr)
 }
 
 
@@ -2388,27 +2392,33 @@ shrinkReads <- function(
         } else {
             what <- "bundledSamples.*-*."
         }
-        file_with_files_to_transfer <- file.path(tempdir, "files_to_transfer.txt")
-        command1 <- paste0(
-            '(cd ', shQuote(inputdir), ' && find . -name "',
-            '', what, regionName, '.RData',
-                '") > ', shQuote(file_with_files_to_transfer)
+        pattern <- glob2rx(paste0(what, regionName, ".RData"))
+        inputdir_normalized <- normalizePath(inputdir, mustWork = TRUE)
+        files <- list.files(
+            inputdir_normalized,
+            pattern = pattern,
+            recursive = TRUE,
+            full.names = TRUE
         )
-        system(command1)
-        command2 <- paste0(
-            "rsync -a --files-from=",
-            shQuote(file_with_files_to_transfer),  " ",
-            shQuote(inputdir), " ",
-            shQuote(tempdir)
-        )
-        system(command2)
+        if (length(files)) {
+            relative <- substring(files, nchar(inputdir_normalized) + 2L)
+            destinations <- file.path(tempdir, relative)
+            invisible(lapply(unique(dirname(destinations)), dir.create,
+                             recursive = TRUE, showWarnings = FALSE))
+            copied <- file.copy(files, destinations, overwrite = TRUE,
+                                copy.mode = TRUE, copy.date = TRUE)
+            if (!all(copied)) {
+                stop("Failed to copy one or more STITCH input files to tempdir",
+                     call. = FALSE)
+            }
+        }
         print_message("Done copying files onto tempdir")
 
     } else {
 
         print_message("Begin shrink reads")
         sampleRanges <- getSampleRange(N = N, nCores = nCores)
-        out <- mclapply(sampleRanges,FUN=shrinkReads_on_range, mc.cores=nCores, originalRegionName = originalRegionName, regionName = regionName, bundling_info = bundling_info, tempdir = tempdir, inputdir = inputdir, inRegionL = inRegionL)
+        out <- parallel::mclapply(sampleRanges,FUN=shrinkReads_on_range, mc.cores=nCores, originalRegionName = originalRegionName, regionName = regionName, bundling_info = bundling_info, tempdir = tempdir, inputdir = inputdir, inRegionL = inRegionL)
         check_mclapply_OK("There has been an error generating the input. Please see error message above")
         print_message("End shrink readsk")
 
@@ -2571,7 +2581,7 @@ subsetSNPsFunction=function(N,subsetSNPsfile,regionName,tempdir,L,nCores,outputd
     # done!
     save(sampleReads,file=paste(tempdir,"sample.",iSample,".input.",regionName,".RData",sep=""))
   }
-    out2 <- mclapply(1:N,FUN=f,tempdir=tempdir,regionName=regionName,L=L,keep=keep,mc.cores=nCores,outputdir=outputdir)
+    out2 <- parallel::mclapply(1:N,FUN=f,tempdir=tempdir,regionName=regionName,L=L,keep=keep,mc.cores=nCores,outputdir=outputdir)
   #
   # done!
   #
@@ -2753,7 +2763,7 @@ buildAlleleCount <- function(
     sampleRanges <- getSampleRange(N = N, nCores = nCores)
     print_message("Generate allele count")
 
-    out2 <- mclapply(
+    out2 <- parallel::mclapply(
         sampleRanges,
         mc.cores = nCores,
         FUN = buildAlleleCount_subfunction,
@@ -2863,7 +2873,7 @@ downsampleToFraction <- function(
 ) {
     print_message("Begin downsampling reads")
     sampleRanges <- getSampleRange(N = N, nCores = nCores)
-    out2 <- mclapply(
+    out2 <- parallel::mclapply(
         sampleRanges,
         mc.cores = nCores,
         FUN = downsampleToFraction_a_range,
@@ -3027,7 +3037,7 @@ initialize_readProbs <- function(
 ) {
     print_message("Initialize readProbs")
     sampleRanges <- getSampleRange(N = N, nCores = nCores)
-    out <- mclapply(1:length(sampleRanges), mc.cores = nCores, function(iCore) {
+    out <- parallel::mclapply(1:length(sampleRanges), mc.cores = nCores, function(iCore) {
         sampleRange <- sampleRanges[[iCore]]
         bundledSampleReads <- NULL
         for(iSample in sampleRange[1]:sampleRange[2]) {
@@ -4164,7 +4174,7 @@ completeSampleIteration <- function(
 
     sampleRanges <- getSampleRange(N, nCores)
 
-    single_iteration_results <- mclapply(
+    single_iteration_results <- parallel::mclapply(
         sampleRanges,
         mc.cores = nCores,
         FUN = subset_of_complete_iteration,
@@ -4846,7 +4856,7 @@ generate_hwe_on_counts <- function(
     nCores
 ) {
     snpRanges <- getSampleRange(nSNPs, nCores) ## should work on this as well
-    out <- mclapply(snpRanges, mc.cores = nCores, function(i) {
+    out <- parallel::mclapply(snpRanges, mc.cores = nCores, function(i) {
         hwe_out <- array(NA, i[2] - i[1] + 1)
         for(j in i[1]:i[2]) {
             hwe_out[j - i[1] + 1] <- rcpp_calculate_hwe_p(hweCount[j, ])
@@ -5388,7 +5398,7 @@ snap_reads_to_grid <- function(
     }
     sampleRanges <- getSampleRange(N = N, nCores = nCores)
 
-    out <- mclapply(
+    out <- parallel::mclapply(
         sampleRanges,
         mc.cores = nCores,
         tempdir = tempdir,

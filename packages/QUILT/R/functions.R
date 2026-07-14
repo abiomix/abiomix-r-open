@@ -704,7 +704,6 @@ get_and_impute_one_sample <- function(
                 calculate_gamma_on_the_fly = calculate_gamma_on_the_fly,
                 disable_read_category_usage = disable_read_category_usage
             )
-
             if (plot_p1) {
                 p1_store[[i_gibbs_sample]][[i_it]] <- gibbs_iterate[["p1"]]
                 read_store[[i_gibbs_sample]][[i_it]] <- gibbs_iterate[["pH"]]
@@ -1475,7 +1474,6 @@ get_and_impute_one_sample <- function(
         super_out_dosage_matrix = super_out_dosage_matrix,
         final_read_labels_prob = final_read_labels_prob
     )
-
     ## phasing_read_labels = phasing_read_labels,
     ## imputed_truth_haplotypes = imputed_truth_haplotypes,
     ## pse_mat = pse_mat,
@@ -3343,4 +3341,3 @@ quilt_chunk_map <- function(chr, genetic_map_file, min.bp = 3e6, min.cm = 4, ex.
   return(dat)
   ## write.table(dat, "chunk.txt", row.names=F, col.names = F, quote = F, sep = "\t")
 }
-

@@ -1527,7 +1527,7 @@ calculate_likelihoods_consistent_with_the_truth <- function(
     iiSample <- 1
     S <- dim(eHapsCurrent_tc)[3]
     ##
-    truth_likelihoods_and_labels <- mclapply(
+    truth_likelihoods_and_labels <- parallel::mclapply(
         1:n_phase,
         mc.cores = nCores,
         FUN = function(iiSample) {
@@ -2147,4 +2147,3 @@ evaluate_read_probabilities <- function(
     }
     return(list(pA1 = pA1, pA2 = pA2))
 }
-

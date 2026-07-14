@@ -17,18 +17,18 @@ Installation: To install, first install dependencies, then run the
         install.packages command, pointing to the downloaded tarball
         (QUILT.tar.gz)
 Getting started: Please see github README.
-Depends: R (>= 4.0.0), STITCH (>= 1.8.2), mspbwt (>= 0.1.0), data.table
+Depends: R (>= 4.0.0), STITCH (>= 1.8.5.9000), mspbwt (>= 0.1.0), data.table
 Remotes:
-    rwdavies/STITCH/STITCH,
+    abiomix/abiomix-r-open/packages/STITCH,
     rwdavies/mspbwt/mspbwt
-Imports: Rcpp
-LinkingTo: Rcpp, RcppArmadillo, RcppEigen (>= 0.3.4.0.0)
-RoxygenNote: 7.3.2
+Imports: Rcpp (>= 1.1.2), parallel
+LinkingTo: Rcpp (>= 1.1.2), RcppArmadillo, RcppEigen (>= 0.3.4.0.0)
+Encoding: UTF-8
+RoxygenNote: 7.3.3
 License: GPL (>= 3) | file LICENSE
 SystemRequirements: C++17
 NeedsCompilation: yes
-Suggests: testthat (>= 3.0.0)
-Config/testthat/edition: 3
+Suggests: tinytest (>= 1.4.3)
 Additional_repositories: https://abiomix.r-universe.dev
 URL: https://github.com/abiomix/abiomix-r-open,
     https://github.com/rwdavies/QUILT
@@ -36,3 +36,4 @@ BugReports: https://github.com/abiomix/abiomix-r-open/issues
 Config/abiomix/public-license: GPL-3.0-or-later
 Config/abiomix/commercial-license: Separate written agreement for Abiomix-owned contributions
 Config/abiomix/license-policy: https://github.com/abiomix/abiomix-r-open/blob/main/LICENSES.md
+Config/roxygen2/version: 8.0.0

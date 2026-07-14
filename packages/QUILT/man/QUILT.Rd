@@ -270,8 +270,10 @@ QUILT(
 
 \item{use_list_of_columns_of_A}{If when using mspbwt, use columns of A rather than the whole thing, to speed up this version}
 
-\item{calculate_gamma_on_the_fly}{If when calculating genProbs, calculate gamma on the fly rather than saving
-#' @return Results in properly formatted version}
+\item{calculate_gamma_on_the_fly}{If when calculating genProbs, calculate gamma on the fly rather than saving}
+}
+\value{
+Results in properly formatted version
 }
 \description{
 QUILT

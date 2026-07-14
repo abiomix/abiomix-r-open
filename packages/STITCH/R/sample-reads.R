@@ -359,7 +359,7 @@ rebundle_input <- function(
     ## multi-core re-bundling
     sampleRanges <- getSampleRange(N, nCores)
 
-    out2 <- mclapply(
+    out2 <- parallel::mclapply(
         sampleRanges,
         mc.cores=nCores,
         FUN = rebundle_input_subfunction,
@@ -439,7 +439,7 @@ load_all_sampleReads_into_memory <- function(
     ##
     print_message("Begin loading all sample reads into memory")
     sampleRanges <- getSampleRange(N = N, nCores = nCores)
-    out <- mclapply(
+    out <- parallel::mclapply(
         sampleRanges,
         mc.cores = nCores,
         FUN = function(sampleRange) {
@@ -487,7 +487,7 @@ split_reads_completely <- function(
 
     print_message("Split reads")
     sampleRanges <- getSampleRange(N = N, nCores = nCores)
-    out <- mclapply(
+    out <- parallel::mclapply(
         sampleRanges,
         mc.cores = nCores,
         FUN = split_read_subfunc,

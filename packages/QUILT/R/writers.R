@@ -116,16 +116,15 @@ make_and_write_output_file <- function(
         nThread = nCores
     )
 
-    print_message("bgzip output file")
-    if (length(grep("~", output_unbgzipped)) > 0) {
-        ## not entirely sure why this system call isn't working otherwise
-        check_system_OK(system(paste0("bgzip --threads ", nCores, " -f ", output_unbgzipped), intern = TRUE))
-        print(system(paste0("tabix -f ", output_filename), intern = TRUE))
-        check_system_OK(system(paste0("tabix -f ", output_filename), intern = TRUE))
-    } else {
-        check_system_OK(system(paste0("bgzip --threads ", nCores, " -f ", shQuote(output_unbgzipped)), intern = TRUE))
-        check_system_OK(system(paste0("tabix -f ", shQuote(output_filename)), intern = TRUE))
-    }
+    print_message("bgzip and index output file")
+    STITCH::bgzip_file(
+        input = output_unbgzipped,
+        output = output_filename,
+        threads = nCores,
+        overwrite = TRUE,
+        remove_input = TRUE
+    )
+    STITCH::index_vcf(output_filename, threads = nCores, overwrite = TRUE)
     print_message("Done making and writing output file")
 
     return(NULL)

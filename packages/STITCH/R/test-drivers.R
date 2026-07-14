@@ -340,7 +340,7 @@ make_acceptance_test_data_package <- function(
 
     sample_files <- lapply(1:n_samples, function(i_sample) {
         to_sample <- 1:(n_snps - reads_span_n_snps + 1)
-        out <- mclapply(
+        out <- parallel::mclapply(
             1:n_reads[i_sample],
             mc.cores = n_cores,
             simulate_a_read,
@@ -850,8 +850,13 @@ make_and_write_reference_vcf <- function(pos, reference_haplotypes, reference_sa
         quote = FALSE
     )
 
-    system(paste0("bgzip -f ", shQuote(reference_vcf_file_unzipped)))
-    system(paste0("tabix ", shQuote(reference_vcf_file)))
+    bgzip_file(
+        reference_vcf_file_unzipped,
+        output = reference_vcf_file,
+        overwrite = TRUE,
+        remove_input = TRUE
+    )
+    index_vcf(reference_vcf_file, overwrite = TRUE)
 
     NULL
     
@@ -1133,5 +1138,4 @@ random_R_version_checker <- function() {
         }
     }
 }
-
 

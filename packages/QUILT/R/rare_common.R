@@ -389,7 +389,6 @@ impute_final_gibbs_with_rare_common <- function(
         ff = ff,
         method = method
     )
-
     
 
     hapProbs_t <- gibbs_iterate$hapProbs_t

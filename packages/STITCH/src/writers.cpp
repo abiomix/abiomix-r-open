@@ -3,10 +3,88 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
+#include <vector>
+
+#include "htslib/bgzf.h"
+#include "htslib/tbx.h"
 
 
 // [[Rcpp::depends(RcppArmadillo)]]
 using namespace Rcpp;
+
+// [[Rcpp::export]]
+void cpp_bgzf_compress(
+    const std::string& input_path,
+    const std::string& output_path,
+    const int n_threads
+) {
+    FILE* input = fopen(input_path.c_str(), "rb");
+    if (input == nullptr) {
+        Rcpp::stop("Cannot open input file for BGZF compression: %s", input_path);
+    }
+
+    BGZF* output = bgzf_open(output_path.c_str(), "w");
+    if (output == nullptr) {
+        fclose(input);
+        Rcpp::stop("Cannot open output file for BGZF compression: %s", output_path);
+    }
+
+    bool failed = false;
+    std::string failure_message;
+    if (n_threads > 1 && bgzf_mt(output, n_threads, 256) != 0) {
+        failed = true;
+        failure_message = "Cannot initialize HTSlib BGZF worker threads";
+    }
+
+    std::vector<unsigned char> buffer(1024 * 1024);
+    while (!failed) {
+        const size_t bytes_read = fread(buffer.data(), 1, buffer.size(), input);
+        if (bytes_read > 0) {
+            const ssize_t bytes_written = bgzf_write(output, buffer.data(), bytes_read);
+            if (bytes_written < 0 || static_cast<size_t>(bytes_written) != bytes_read) {
+                failed = true;
+                failure_message = "HTSlib failed while writing the BGZF output";
+                break;
+            }
+        }
+        if (bytes_read < buffer.size()) {
+            if (ferror(input)) {
+                failed = true;
+                failure_message = "Failed while reading the input file";
+            }
+            break;
+        }
+    }
+
+    if (fclose(input) != 0 && !failed) {
+        failed = true;
+        failure_message = "Failed while closing the input file";
+    }
+    if (bgzf_close(output) != 0 && !failed) {
+        failed = true;
+        failure_message = "HTSlib failed while closing the BGZF output";
+    }
+
+    if (failed) {
+        std::remove(output_path.c_str());
+        Rcpp::stop("%s: %s", failure_message, output_path);
+    }
+}
+
+// [[Rcpp::export]]
+void cpp_index_vcf(const std::string& vcf_path, const int n_threads) {
+    const int status = tbx_index_build3(
+        vcf_path.c_str(),
+        nullptr,
+        0,
+        n_threads,
+        &tbx_conf_vcf
+    );
+    if (status != 0) {
+        Rcpp::stop("HTSlib could not build a tabix VCF index for %s (status %d)",
+                   vcf_path, status);
+    }
+}
 
 //' @export
 // [[Rcpp::export]]

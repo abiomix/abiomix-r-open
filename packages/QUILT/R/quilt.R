@@ -91,7 +91,7 @@
 #' @param heuristic_approach Which heuristic to use
 #' @param use_list_of_columns_of_A If when using mspbwt, use columns of A rather than the whole thing, to speed up this version
 #' @param calculate_gamma_on_the_fly If when calculating genProbs, calculate gamma on the fly rather than saving
-#' #' @return Results in properly formatted version
+#' @return Results in properly formatted version
 #' @author Robert Davies
 #' @export
 QUILT <- function(
@@ -234,8 +234,6 @@ QUILT <- function(
     ## validate parameters
     ##
     STITCH::validate_tempdir(tempdir)
-    check_program_dependency("bgzip")
-    check_program_dependency("tabix")
 
 
     ##
@@ -683,13 +681,12 @@ QUILT <- function(
         nSNPs_all <- nrow(pos)
     }
 
-
     ##
     ## mclapply the runs!
     ##
     iCore <- 1
     sampleRanges <- getSampleRange(N, nCores)
-    complete_set_of_results <- mclapply(1:length(sampleRanges), mc.cores = nCores, function(iCore) {
+    complete_set_of_results <- parallel::mclapply(1:length(sampleRanges), mc.cores = nCores, function(iCore) {
 
         sampleRange <- sampleRanges[[iCore]]
 
@@ -1022,7 +1019,6 @@ QUILT <- function(
         output_gt_phased_genotypes = output_gt_phased_genotypes,
         method = method
     )
-
     ##
     ## build a singular set of results
     ##

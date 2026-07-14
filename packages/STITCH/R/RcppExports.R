@@ -270,6 +270,14 @@ test_eHaps_options <- function(cube_eHaps_t, list_of_eHaps_t, gamma_t, eHaps_inp
     .Call('_STITCH_test_eHaps_options', PACKAGE = 'STITCH', cube_eHaps_t, list_of_eHaps_t, gamma_t, eHaps_input, option, nSNPs, K, S)
 }
 
+cpp_bgzf_compress <- function(input_path, output_path, n_threads) {
+    invisible(.Call('_STITCH_cpp_bgzf_compress', PACKAGE = 'STITCH', input_path, output_path, n_threads))
+}
+
+cpp_index_vcf <- function(vcf_path, n_threads) {
+    invisible(.Call('_STITCH_cpp_index_vcf', PACKAGE = 'STITCH', vcf_path, n_threads))
+}
+
 #' @export
 rcpp_make_column_of_vcf <- function(gp_t, use_read_proportions, use_state_probabilities, add_x_2_cols, read_proportions, q_t, x_t) {
     .Call('_STITCH_rcpp_make_column_of_vcf', PACKAGE = 'STITCH', gp_t, use_read_proportions, use_state_probabilities, add_x_2_cols, read_proportions, q_t, x_t)
