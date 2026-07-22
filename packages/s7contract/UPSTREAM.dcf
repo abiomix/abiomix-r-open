@@ -1,7 +1,0 @@
-Package: s7contract
-Repository: https://github.com/sounkou-bioinfo/s7contract
-Commit: ab577b1cb26c7aeed485b82bbd450f18f7cff737
-Imported: 2026-07-13
-Method: git subtree --squash
-Subdirectory: packages/s7contract
-Upstream-License: GPL (>= 3)
