@@ -1,7 +1,0 @@
-Package: Rducks
-Repository: https://github.com/sounkou-bioinfo/Rducks
-Commit: 15a2db097477a8b555e7747d202dc928e4a1bf58
-Imported: 2026-07-13
-Method: git subtree --squash
-Subdirectory: packages/Rducks
-Upstream-License: GPL (>= 3)

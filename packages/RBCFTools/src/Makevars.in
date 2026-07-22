@@ -1,7 +1,0 @@
-.PHONY: all clean
-
-# Native tools are built by configure and installed below inst/. RBCFTools has
-# no R shared library: its public boundary is the packaged executables.
-all:
-
-clean:

@@ -1,7 +1,0 @@
-Package: RBCFTools
-Repository: https://github.com/RGenomicsETL/RBCFTools
-Commit: 6ee59bc75ad79dee265f8ac3594f825ba3cb8ae8
-Imported: 2026-07-13
-Method: git subtree --squash
-Subdirectory: packages/RBCFTools
-Upstream-License: GPL (>= 3)

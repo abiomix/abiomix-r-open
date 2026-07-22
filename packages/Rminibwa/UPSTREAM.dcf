@@ -1,7 +1,0 @@
-Package: Rminibwa
-Repository: https://github.com/sounkou-bioinfo/Rminibwa
-Commit: 4546cd96adaa901e306e51c363c64d5521787bcf
-Imported: 2026-07-13
-Method: git subtree --squash
-Subdirectory: packages/Rminibwa
-Upstream-License: GPL (>= 2)

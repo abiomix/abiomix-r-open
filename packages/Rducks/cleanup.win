@@ -1,6 +1,0 @@
-#!/bin/sh
-set -eu
-
-rm -rf inst/rducks_extension/build
-rm -f src/*.o src/*.so src/*.dll src/*.dylib
-rm -f conftest conftest.exe conftest.c
